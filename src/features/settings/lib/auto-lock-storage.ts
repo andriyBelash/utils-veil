@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 
-const KEY = 'passvault_auto_lock_timeout';
+const KEY = 'veil_auto_lock_timeout';
 
 export type AutoLockTimeout = 0 | 30 | 60;
 

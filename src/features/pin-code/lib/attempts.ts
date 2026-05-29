@@ -2,7 +2,7 @@ import * as SecureStore from "expo-secure-store";
 
 // Simple persisted rate-limiter for PIN entry. Since the PIN is now just an
 // app-level gate, this throttling is the main protection against guessing.
-const KEY = "passvault_pin_attempts";
+const KEY = "veil_pin_attempts";
 const FREE_ATTEMPTS = 5;
 
 // Lockout duration (ms) once attempts exceed FREE_ATTEMPTS, escalating.

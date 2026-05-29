@@ -15,7 +15,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "allowBackup": false
     },
     "web": {
       "output": "static",
@@ -36,7 +37,18 @@
       "expo-localization",
       "expo-secure-store",
       "expo-sharing",
-      "expo-sqlite"
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Veil imports the photos you select into your on-device encrypted vault."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

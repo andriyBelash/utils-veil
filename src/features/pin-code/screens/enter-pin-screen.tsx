@@ -1,30 +1,30 @@
-import * as LocalAuthentication from 'expo-local-authentication';
-import { Image } from 'expo-image';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, useColorScheme } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView, type SymbolViewProps } from 'expo-symbols';
+import { Image } from "expo-image";
+import * as LocalAuthentication from "expo-local-authentication";
+import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Platform, Pressable, StyleSheet, useColorScheme } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
-import { useLocale } from '@/features/localization';
-import { readBiometricEnabled } from '@/features/settings/lib/biometric-storage';
-import { useTheme } from '@/hooks/use-theme';
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { Spacing } from "@/constants/theme";
+import { useLocale } from "@/features/localization";
+import { readBiometricEnabled } from "@/features/settings/lib/biometric-storage";
+import { useTheme } from "@/hooks/use-theme";
 
-import { PinDots, PinDotsHandle } from '../components/pin-dots';
-import { PinKeypad } from '../components/pin-keypad';
-import { usePinContext } from '../hooks/use-pin-context';
+import { PinDots, PinDotsHandle } from "../components/pin-dots";
+import { PinKeypad } from "../components/pin-keypad";
+import { usePinContext } from "../hooks/use-pin-context";
 
-const LOGO_LIGHT = require('@/assets/images/logo/logo-light.svg');
-const LOGO_DARK = require('@/assets/images/logo/logo-dark.png');
+const LOGO_LIGHT = require("@/assets/images/adaptive-icon.png");
+const LOGO_DARK = require("@/assets/images/adaptive-icon.png");
 
 export function EnterPinScreen() {
   const { unlockPin, unlockWithBiometric, lockedUntil } = usePinContext();
   const { t } = useLocale();
   const theme = useTheme();
   const colorScheme = useColorScheme();
-  const [pin, setPin] = useState('');
+  const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [biometricVisible, setBiometricVisible] = useState(false);
@@ -45,8 +45,8 @@ export function EnterPinScreen() {
     const totalSec = Math.ceil(remainingMs / 1000);
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
-    const time = m > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${s}s`;
-    return t.pin.lockedTryIn.replace('{time}', time);
+    const time = m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+    return t.pin.lockedTryIn.replace("{time}", time);
   })();
 
   const triggerBiometric = useCallback(async () => {
@@ -82,7 +82,7 @@ export function EnterPinScreen() {
         dotsRef.current?.shake();
         setError(t.pin.incorrectPin);
         setTimeout(() => {
-          setPin('');
+          setPin("");
           setError(null);
           setBusy(false);
         }, 700);
@@ -102,20 +102,21 @@ export function EnterPinScreen() {
     setPin((p) => p.slice(0, -1));
   }
 
-  const biometricIcon = Platform.OS === 'ios'
-    ? { ios: 'faceid', android: 'face_recognition', web: 'face' }
-    : { ios: 'touchid', android: 'fingerprint', web: 'fingerprint' };
+  const biometricIcon =
+    Platform.OS === "ios"
+      ? { ios: "faceid", android: "face_recognition", web: "face" }
+      : { ios: "touchid", android: "fingerprint", web: "fingerprint" };
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
         <ThemedView style={styles.header}>
           <Image
-            source={colorScheme === 'dark' ? LOGO_LIGHT : LOGO_DARK}
+            source={colorScheme === "dark" ? LOGO_LIGHT : LOGO_DARK}
             style={styles.logo}
             contentFit="contain"
           />
-          <ThemedText type="subtitle">PassVault</ThemedText>
+          <ThemedText type="subtitle">Veil</ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
             {t.pin.enterSubtitle}
           </ThemedText>
@@ -130,15 +131,26 @@ export function EnterPinScreen() {
           )}
         </ThemedView>
 
-        <PinKeypad onDigit={handleDigit} onDelete={handleDelete} disabled={busy || isLocked} />
+        <PinKeypad
+          onDigit={handleDigit}
+          onDelete={handleDelete}
+          disabled={busy || isLocked}
+        />
 
         {biometricVisible && (
           <ThemedView style={styles.biometricRow}>
             <Pressable
               onPress={triggerBiometric}
-              style={({ pressed }) => [styles.biometricButton, pressed && styles.biometricButtonPressed]}
+              style={({ pressed }) => [
+                styles.biometricButton,
+                pressed && styles.biometricButtonPressed,
+              ]}
             >
-              <SymbolView name={biometricIcon as SymbolViewProps['name']} size={28} tintColor={theme.text} />
+              <SymbolView
+                name={biometricIcon as SymbolViewProps["name"]}
+                size={28}
+                tintColor={theme.text}
+              />
             </Pressable>
           </ThemedView>
         )}
@@ -156,8 +168,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    alignItems: "center",
+    justifyContent: "flex-end",
     gap: Spacing.two,
   },
   logo: {
@@ -165,13 +177,13 @@ const styles = StyleSheet.create({
     height: 80,
   },
   dotsSection: {
-    alignItems: 'center',
+    alignItems: "center",
     gap: Spacing.three,
     paddingVertical: Spacing.four,
   },
-  errorText: { color: '#EF4444' },
+  errorText: { color: "#EF4444" },
   biometricRow: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingBottom: Spacing.two,
   },
   biometricButton: {

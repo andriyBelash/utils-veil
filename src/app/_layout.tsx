@@ -1,4 +1,8 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from "expo-router";
+import {
+  enableAppSwitcherProtectionAsync,
+  usePreventScreenCapture,
+} from "expo-screen-capture";
 import { useEffect } from "react";
 import { Appearance, useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -31,6 +35,10 @@ function AppContent() {
     <Stack screenOptions={{ animation: "none", headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="settings" />
+      <Stack.Screen
+        name="item/[id]"
+        options={{ presentation: "fullScreenModal", animation: "fade" }}
+      />
       <Stack.Screen name="privacy-policy" />
     </Stack>
   );
@@ -38,6 +46,14 @@ function AppContent() {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  // Android FLAG_SECURE + iOS screen-recording block, app-wide.
+  usePreventScreenCapture();
+
+  useEffect(() => {
+    // iOS: blur the app-switcher preview so vault contents don't leak there.
+    enableAppSwitcherProtectionAsync().catch(() => {});
+  }, []);
 
   useEffect(() => {
     readThemePreference().then((pref) => {

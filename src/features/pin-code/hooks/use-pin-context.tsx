@@ -101,7 +101,7 @@ export function PinProvider({ children }: { children: React.ReactNode }) {
     setFlowState('change-create');
   }, []);
 
-  const unlockWithBiometric = useCallback(async (prompt: string = 'Unlock PassVault'): Promise<boolean> => {
+  const unlockWithBiometric = useCallback(async (prompt: string = 'Unlock Veil'): Promise<boolean> => {
     const ok = await unlockVaultWithBiometric(prompt);
     if (ok) setFlowState('authenticated');
     return ok;

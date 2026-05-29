@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-const KEY = 'passvault_biometric_enabled';
+const KEY = 'veil_biometric_enabled';
 
 export async function readBiometricEnabled(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
