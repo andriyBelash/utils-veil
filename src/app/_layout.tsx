@@ -31,26 +31,6 @@ function AppContent() {
     <Stack screenOptions={{ animation: "none", headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="settings" />
-      <Stack.Screen
-        name="create-entry"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="entry/[id]"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="import-options"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="csv-source"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
-      <Stack.Screen
-        name="import-preview"
-        options={{ presentation: "modal", animation: "slide_from_bottom" }}
-      />
       <Stack.Screen name="privacy-policy" />
     </Stack>
   );

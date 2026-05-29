@@ -10,12 +10,6 @@ import {
   unlockVaultWithBiometric,
   verifyPin,
 } from '@/features/vault/lib/crypto';
-import { getDb } from '@/features/vault/lib/db';
-import {
-  hasLegacyVault,
-  migrateLegacyData,
-  verifyLegacyPin,
-} from '@/features/vault/lib/legacy-migration';
 
 import { getLockedUntil, recordFailure, resetAttempts } from '../lib/attempts';
 import type { PinContextValue, PinFlowState } from '../lib/types';
@@ -28,17 +22,11 @@ export function PinProvider({ children }: { children: React.ReactNode }) {
   const [lockedUntil, setLockedUntil] = useState(0);
   const isChangingPin = useRef(false);
   const verifiedOldPin = useRef<string | null>(null);
-  const legacyMode = useRef(false);
 
   useEffect(() => {
     async function init() {
       setLockedUntil(await getLockedUntil());
       if (await hasVault()) {
-        setFlowState('enter');
-        return;
-      }
-      if (await hasLegacyVault()) {
-        legacyMode.current = true;
         setFlowState('enter');
         return;
       }
@@ -80,21 +68,6 @@ export function PinProvider({ children }: { children: React.ReactNode }) {
     if ((await getLockedUntil()) > Date.now()) {
       setLockedUntil(await getLockedUntil());
       return false;
-    }
-    if (legacyMode.current) {
-      const legacyOk = await verifyLegacyPin(pin);
-      if (!legacyOk) {
-        setLockedUntil(await recordFailure());
-        return false;
-      }
-      await initializeVault(pin);
-      const db = await getDb();
-      await migrateLegacyData(db);
-      legacyMode.current = false;
-      await resetAttempts();
-      setLockedUntil(0);
-      setFlowState('authenticated');
-      return true;
     }
     const ok = await unlockVault(pin);
     if (ok) {

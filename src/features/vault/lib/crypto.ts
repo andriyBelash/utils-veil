@@ -136,34 +136,3 @@ export function decryptEntry(serialized: string): EntryPlaintext {
   const plaintext = aeadDecrypt(blob, cachedDek);
   return JSON.parse(bytesToUtf8(plaintext)) as EntryPlaintext;
 }
-
-// ===== Password generator =====
-
-export async function generatePassword(length = 20): Promise<string> {
-  const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  const lower = 'abcdefghijklmnopqrstuvwxyz';
-  const digits = '0123456789';
-  const special = '!@#$%^&*';
-  const all = upper + lower + digits + special;
-
-  const bytes = await Crypto.getRandomBytesAsync(length + 4);
-
-  const required = [
-    upper[bytes[0] % upper.length],
-    lower[bytes[1] % lower.length],
-    digits[bytes[2] % digits.length],
-    special[bytes[3] % special.length],
-  ];
-
-  const rest = Array.from({ length: length - 4 }, (_, i) => all[bytes[4 + i] % all.length]);
-
-  const combined = [...required, ...rest];
-  const shuffleBytes = await Crypto.getRandomBytesAsync(combined.length);
-
-  for (let i = combined.length - 1; i > 0; i--) {
-    const j = shuffleBytes[i] % (i + 1);
-    [combined[i], combined[j]] = [combined[j], combined[i]];
-  }
-
-  return combined.join('');
-}

@@ -1,8 +1,7 @@
-import * as Sharing from 'expo-sharing';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -14,8 +13,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { LOCALE_LABELS } from '@/i18n';
 import { useBiometric } from '../hooks/use-biometric';
 
-import { AuthSheet } from '@/features/vault/components/auth-sheet';
-import { exportToCsv, cleanupCsvExport } from '@/features/vault/lib/backup';
 import { AutoLockSheet } from '../components/auto-lock-sheet';
 import { LanguageSheet } from '../components/language-sheet';
 import { SettingsRow } from '../components/settings-row';
@@ -38,25 +35,7 @@ export function SettingsScreen() {
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
   const [langSheetOpen, setLangSheetOpen] = useState(false);
   const [autoLockSheetOpen, setAutoLockSheetOpen] = useState(false);
-  const [exportAuthOpen, setExportAuthOpen] = useState(false);
 
-  async function handleExportSuccess(_pin: string) {
-    setExportAuthOpen(false);
-    // Wait for the sheet dismiss animation to finish before presenting share sheet
-    await new Promise((r) => setTimeout(r, 400));
-    try {
-      const uri = await exportToCsv();
-      await Sharing.shareAsync(uri, {
-        mimeType: 'text/csv',
-        dialogTitle: t.settings.exportVault,
-        UTI: 'public.comma-separated-values-text',
-      });
-    } catch {
-      Alert.alert(t.settings.exportErrorTitle, t.settings.exportErrorMessage);
-    } finally {
-      await cleanupCsvExport();
-    }
-  }
   const { preference } = useThemePreference();
   const { timeout: autoLockTimeout, setAutoLock } = useAutoLockPreference();
   const { t, locale } = useLocale();
@@ -151,21 +130,6 @@ export function SettingsScreen() {
             />
           </SettingsSection>
 
-          <SettingsSection label={t.settings.vault} footer={t.settings.vaultFooter}>
-            <SettingsRow
-              icon={{ ios: 'square.and.arrow.up', android: 'upload', web: 'upload' }}
-              label={t.settings.exportVault}
-              type="navigate"
-              onPress={() => setExportAuthOpen(true)}
-            />
-            <SettingsRow
-              icon={{ ios: 'square.and.arrow.down', android: 'download', web: 'download' }}
-              label={t.settings.importVault}
-              type="navigate"
-              onPress={() => router.push('/csv-source')}
-            />
-          </SettingsSection>
-
           <SettingsSection label={t.settings.about}>
             <SettingsRow
               icon={{ ios: 'info.circle', android: 'info', web: 'info' }}
@@ -190,12 +154,6 @@ export function SettingsScreen() {
         current={autoLockTimeout}
         onSelect={setAutoLock}
         onClose={() => setAutoLockSheetOpen(false)}
-      />
-      <AuthSheet
-        isOpen={exportAuthOpen}
-        title={t.settings.exportAuthTitle}
-        onSuccess={handleExportSuccess}
-        onCancel={() => setExportAuthOpen(false)}
       />
     </ThemedView>
   );
