@@ -9,14 +9,11 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useLocale } from '@/features/localization';
-import {
-  decryptFullToDataUri,
-  getItem,
-  removeItem,
-  setFavorite,
-  type VaultItem,
-} from '@/features/vault';
 import { useTheme } from '@/hooks/use-theme';
+
+import { getItem, setFavorite } from '../lib/db';
+import { decryptFullToDataUri, removeItem } from '../lib/media-import';
+import type { VaultItem } from '../lib/types';
 
 export function ItemDetailScreen() {
   const theme = useTheme();

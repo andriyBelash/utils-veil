@@ -28,8 +28,9 @@ export function EnterPinScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [biometricVisible, setBiometricVisible] = useState(false);
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const dotsRef = useRef<PinDotsHandle>(null);
+  const didInitBiometric = useRef(false);
 
   const remainingMs = Math.max(0, lockedUntil - now);
   const isLocked = remainingMs > 0;
@@ -58,7 +59,9 @@ export function EnterPinScreen() {
   }, [t, unlockWithBiometric]);
 
   useEffect(() => {
-    async function init() {
+    if (didInitBiometric.current) return;
+    didInitBiometric.current = true;
+    (async () => {
       const biometricEnabled = await readBiometricEnabled();
       if (!biometricEnabled) return;
 
@@ -70,14 +73,13 @@ export function EnterPinScreen() {
 
       setBiometricVisible(true);
       triggerBiometric();
-    }
-    init();
-  }, []);
+    })();
+  }, [triggerBiometric]);
 
-  useEffect(() => {
-    if (pin.length !== 6) return;
-    setBusy(true);
-    unlockPin(pin).then((ok) => {
+  const attemptUnlock = useCallback(
+    async (value: string) => {
+      setBusy(true);
+      const ok = await unlockPin(value);
       if (!ok) {
         dotsRef.current?.shake();
         setError(t.pin.incorrectPin);
@@ -87,13 +89,16 @@ export function EnterPinScreen() {
           setBusy(false);
         }, 700);
       }
-    });
-  }, [pin, unlockPin]);
+    },
+    [unlockPin, t.pin.incorrectPin],
+  );
 
   function handleDigit(digit: string) {
-    if (busy || isLocked) return;
+    if (busy || isLocked || pin.length >= 6) return;
     if (error) setError(null);
-    setPin((p) => (p.length < 6 ? p + digit : p));
+    const next = pin + digit;
+    setPin(next);
+    if (next.length === 6) attemptUnlock(next);
   }
 
   function handleDelete() {
