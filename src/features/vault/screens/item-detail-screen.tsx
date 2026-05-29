@@ -1,29 +1,39 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
+import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useLocale } from '@/features/localization';
-import { useTheme } from '@/hooks/use-theme';
 
 import { getItem, setFavorite } from '../lib/db';
-import { decryptFullToDataUri, removeItem } from '../lib/media-import';
+import { decryptFullToDataUri, removeItem, shareItem } from '../lib/media-import';
 import type { VaultItem } from '../lib/types';
 
+function formatStamp(ms: number, locale: string): { date: string; time: string } {
+  const d = new Date(ms);
+  try {
+    return {
+      date: d.toLocaleDateString(locale, { day: 'numeric', month: 'long' }),
+      time: d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
+    };
+  } catch {
+    return { date: d.toDateString(), time: d.toTimeString().slice(0, 5) };
+  }
+}
+
 export function ItemDetailScreen() {
-  const theme = useTheme();
   const router = useRouter();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [item, setItem] = useState<VaultItem | null>(null);
   const [uri, setUri] = useState<string | null>(null);
   const [favorite, setFavoriteState] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -36,13 +46,15 @@ export function ItemDetailScreen() {
         const dataUri = await decryptFullToDataUri(loaded);
         if (active) setUri(dataUri);
       } catch {
-        // corrupt/undecryptable — leave spinner; user can delete
+        // corrupt/undecryptable — leave spinner; user can still delete
       }
     })();
     return () => {
       active = false;
     };
   }, [id]);
+
+  const stamp = item ? formatStamp(item.createdAt, locale) : null;
 
   function goBack() {
     if (router.canGoBack()) router.back();
@@ -56,6 +68,18 @@ export function ItemDetailScreen() {
     await setFavorite(item.id, next);
   }
 
+  async function handleShare() {
+    if (!item || busy) return;
+    setBusy(true);
+    try {
+      await shareItem(item);
+    } catch {
+      // share cancelled or unavailable
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function confirmDelete() {
     if (!item) return;
     Alert.alert(t.home.deleteTitle, t.home.deleteMessage, [
@@ -65,83 +89,122 @@ export function ItemDetailScreen() {
         style: 'destructive',
         onPress: async () => {
           await removeItem(item);
-          router.back();
+          goBack();
         },
       },
     ]);
   }
 
   return (
-    <ThemedView style={styles.container}>
+    <View style={styles.container}>
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
-        <View style={styles.header}>
-          <Pressable onPress={goBack} hitSlop={16} style={styles.headerBtn}>
-            <SymbolView
-              name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
-              size={20}
-              tintColor={theme.text}
-            />
-          </Pressable>
-          <View style={styles.headerActions}>
-            <Pressable onPress={toggleFavorite} hitSlop={12} style={styles.headerBtn}>
-              <SymbolView
-                name={
-                  favorite
-                    ? { ios: 'heart.fill', android: 'favorite', web: 'favorite' }
-                    : { ios: 'heart', android: 'favorite_border', web: 'favorite_border' }
-                }
-                size={20}
-                tintColor={favorite ? '#ff3b30' : theme.text}
-              />
-            </Pressable>
-            <Pressable onPress={confirmDelete} hitSlop={12} style={styles.headerBtn}>
-              <SymbolView
-                name={{ ios: 'trash', android: 'delete', web: 'delete' }}
-                size={20}
-                tintColor="#ff3b30"
-              />
-            </Pressable>
+        {/* Top bar: back · date/time · spacer */}
+        <View style={styles.topBar}>
+          <CircleButton icon={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} onPress={goBack} />
+          <View style={styles.stamp}>
+            {stamp ? (
+              <>
+                <ThemedText style={styles.stampDate}>{stamp.date}</ThemedText>
+                <ThemedText style={styles.stampTime}>{stamp.time}</ThemedText>
+              </>
+            ) : null}
           </View>
+          <View style={styles.circle} />
         </View>
 
+        {/* Photo */}
         <View style={styles.imageWrap}>
           {uri ? (
             <Image source={{ uri }} style={styles.image} contentFit="contain" cachePolicy="memory" />
           ) : (
-            <ActivityIndicator color={theme.textSecondary} />
+            <ActivityIndicator color="#ffffff" />
           )}
         </View>
 
-        {item ? (
-          <ThemedText type="small" themeColor="textSecondary" style={styles.name}>
-            {item.originalName}
-          </ThemedText>
-        ) : null}
+        {/* Bottom toolbar: share · favorite · delete */}
+        <View style={styles.toolbar}>
+          <CircleButton
+            icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
+            onPress={handleShare}
+            disabled={busy}
+          />
+          <CircleButton
+            icon={
+              favorite
+                ? { ios: 'heart.fill', android: 'favorite', web: 'favorite' }
+                : { ios: 'heart', android: 'favorite_border', web: 'favorite_border' }
+            }
+            onPress={toggleFavorite}
+            tint={favorite ? '#ff3b30' : '#ffffff'}
+          />
+          <CircleButton
+            icon={{ ios: 'trash', android: 'delete', web: 'delete' }}
+            onPress={confirmDelete}
+            tint="#ff3b30"
+          />
+        </View>
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
 
+type CircleButtonProps = {
+  icon: SymbolViewProps['name'];
+  onPress: () => void;
+  tint?: string;
+  disabled?: boolean;
+};
+
+function CircleButton({ icon, onPress, tint = '#ffffff', disabled }: CircleButtonProps) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      hitSlop={8}
+      style={({ pressed }) => [
+        styles.circle,
+        { backgroundColor: 'rgba(120,120,128,0.32)' },
+        (pressed || disabled) && styles.circlePressed,
+      ]}
+    >
+      <SymbolView name={icon} size={22} tintColor={tint} />
+    </Pressable>
+  );
+}
+
+const CIRCLE = 44;
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: { flex: 1, backgroundColor: '#000000' },
   safeArea: { flex: 1 },
-  header: {
+  topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
+    paddingVertical: Spacing.two,
   },
-  headerActions: {
-    flexDirection: 'row',
-    gap: Spacing.four,
+  stamp: {
+    flex: 1,
+    alignItems: 'center',
   },
-  headerBtn: {
-    width: 44,
-    height: 44,
+  stampDate: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  stampTime: {
+    color: 'rgba(235,235,245,0.6)',
+    fontSize: 13,
+  },
+  circle: {
+    width: CIRCLE,
+    height: CIRCLE,
+    borderRadius: CIRCLE / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  circlePressed: { opacity: 0.5 },
   imageWrap: {
     flex: 1,
     alignItems: 'center',
@@ -151,8 +214,11 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  name: {
-    textAlign: 'center',
-    paddingVertical: Spacing.three,
+  toolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.six,
+    paddingTop: Spacing.three,
   },
 });

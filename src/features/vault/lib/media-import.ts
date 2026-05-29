@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import * as Sharing from 'expo-sharing';
 
 import { bytesToBase64, bytesToBase64Async } from './crypto-primitives';
 import { deleteItem, insertItem } from './db';
@@ -103,6 +104,29 @@ export async function decryptFullToDataUri(item: VaultItem): Promise<string> {
   const blob = new File(item.encryptedPath).bytesSync();
   const plain = await decryptFileBytes(item.id, blob);
   return `data:${item.mimeType ?? 'image/jpeg'};base64,${await bytesToBase64Async(plain)}`;
+}
+
+/**
+ * User-initiated export through the system share sheet. This DELIBERATELY takes
+ * a photo out of the vault: it decrypts to a short-lived plaintext temp file in
+ * the cache, shares it, then wipes the temp file. The plaintext only exists in
+ * cache for the duration of the share.
+ */
+export async function shareItem(item: VaultItem): Promise<void> {
+  if (!(await Sharing.isAvailableAsync())) return;
+  const blob = new File(item.encryptedPath).bytesSync();
+  const plain = await decryptFileBytes(item.id, blob);
+
+  const safeName = (item.originalName || `${item.id}.jpg`).replace(/[/\\:]/g, '_');
+  const tmp = new File(Paths.cache, safeName);
+  if (tmp.exists) safeDelete(tmp.uri);
+  tmp.create();
+  tmp.write(plain);
+  try {
+    await Sharing.shareAsync(tmp.uri, { mimeType: item.mimeType ?? 'image/jpeg' });
+  } finally {
+    safeDelete(tmp.uri);
+  }
 }
 
 /** Deletes the encrypted files and the metadata row. */

@@ -16,6 +16,7 @@ export {
   requestLibraryPermission,
   decryptThumbToDataUri,
   decryptFullToDataUri,
+  shareItem,
   removeItem,
 } from './lib/media-import';
 export type { VaultItem, NewVaultItem, Album } from './lib/types';
