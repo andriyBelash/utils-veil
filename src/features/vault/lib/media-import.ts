@@ -3,7 +3,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
-import { bytesToBase64 } from './crypto-primitives';
+import { bytesToBase64, bytesToBase64Async } from './crypto-primitives';
 import { deleteItem, insertItem } from './db';
 import { decryptFileBytes, encryptFileBytes } from './file-crypto';
 import type { VaultItem } from './types';
@@ -102,7 +102,7 @@ export async function decryptThumbToDataUri(item: VaultItem): Promise<string | n
 export async function decryptFullToDataUri(item: VaultItem): Promise<string> {
   const blob = new File(item.encryptedPath).bytesSync();
   const plain = await decryptFileBytes(item.id, blob);
-  return `data:${item.mimeType ?? 'image/jpeg'};base64,${bytesToBase64(plain)}`;
+  return `data:${item.mimeType ?? 'image/jpeg'};base64,${await bytesToBase64Async(plain)}`;
 }
 
 /** Deletes the encrypted files and the metadata row. */

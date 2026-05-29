@@ -82,3 +82,23 @@ export function bytesToBase64(bytes: Uint8Array): string {
   }
   return out;
 }
+
+// 3-byte-aligned slice size: each slice encodes to whole base64 groups (no
+// mid-stream padding), so concatenating the parts is valid.
+const B64_CHUNK = 96 * 1024;
+
+/**
+ * Base64 for large buffers (full-size images). Encodes in chunks and yields to
+ * the event loop between them so the JS thread stays responsive (touches keep
+ * working) instead of freezing on a multi-MB synchronous encode.
+ */
+export async function bytesToBase64Async(bytes: Uint8Array): Promise<string> {
+  if (bytes.length <= B64_CHUNK) return bytesToBase64(bytes);
+  const parts: string[] = [];
+  for (let off = 0; off < bytes.length; off += B64_CHUNK) {
+    parts.push(bytesToBase64(bytes.subarray(off, off + B64_CHUNK)));
+    // macrotask yield — lets the UI thread process pending touches
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  return parts.join('');
+}

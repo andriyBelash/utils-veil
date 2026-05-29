@@ -44,6 +44,11 @@ export function ItemDetailScreen() {
     };
   }, [id]);
 
+  function goBack() {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }
+
   async function toggleFavorite() {
     if (!item) return;
     const next = !favorite;
@@ -70,10 +75,10 @@ export function ItemDetailScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} hitSlop={12} style={styles.headerBtn}>
+          <Pressable onPress={goBack} hitSlop={16} style={styles.headerBtn}>
             <SymbolView
               name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
-              size={18}
+              size={20}
               tintColor={theme.text}
             />
           </Pressable>
@@ -132,6 +137,8 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
   headerBtn: {
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
