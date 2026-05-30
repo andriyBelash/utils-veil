@@ -20,3 +20,10 @@ export type Album = {
   coverItemId: string | null;
   createdAt: number;
 };
+
+// Album plus derived display data: how many photos it holds and the most recent
+// one to use as a cover thumbnail.
+export type AlbumWithMeta = Album & {
+  count: number;
+  coverItem: VaultItem | null;
+};

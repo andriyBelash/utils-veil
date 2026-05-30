@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -11,9 +12,12 @@ import Animated, {
 
 const MAX_SCALE = 4;
 const DOUBLE_TAP_SCALE = 2;
-// Drag distance / velocity past which a 1x swipe (up or down) dismisses.
+// Drag distance / velocity past which a 1x swipe down dismisses.
 const DISMISS_THRESHOLD = 120;
 const DISMISS_VELOCITY = 900;
+// At 1x, gestures steeper than vertical activate dismiss; flatter ones fail so
+// the horizontal pager underneath claims them for page switching.
+const AXIS_SLOP = 15;
 
 type Props = {
   uri: string | null;
@@ -21,6 +25,9 @@ type Props = {
   onDismiss: () => void;
   // 0 = at rest, 1 = fully dragged away. Drives chrome fade in the parent.
   dragProgress: SharedValue<number>;
+  // Reports zoom state so the parent pager can disable horizontal scrolling
+  // while the image is zoomed in (otherwise panning fights paging).
+  onZoomChange?: (zoomed: boolean) => void;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -28,8 +35,16 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export function ZoomableImage({ uri, thumbUri, onDismiss, dragProgress }: Props) {
+export function ZoomableImage({ uri, thumbUri, onDismiss, dragProgress, onZoomChange }: Props) {
   const { width, height } = useWindowDimensions();
+
+  // React-side mirror of the zoom state. Drives `.enabled()` on the two pans and
+  // is forwarded to the parent so it can freeze the pager while zoomed.
+  const [zoomed, setZoomed] = useState(false);
+  const reportZoom = (next: boolean) => {
+    setZoomed(next);
+    onZoomChange?.(next);
+  };
 
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -59,37 +74,31 @@ export function ZoomableImage({ uri, thumbUri, onDismiss, dragProgress }: Props)
     .onEnd(() => {
       if (scale.value < 1) {
         resetToFit();
+        runOnJS(reportZoom)(false);
       } else if (scale.value > MAX_SCALE) {
         scale.value = withSpring(MAX_SCALE);
         savedScale.value = MAX_SCALE;
+        runOnJS(reportZoom)(true);
       } else {
         savedScale.value = scale.value;
+        runOnJS(reportZoom)(scale.value > 1);
       }
     });
 
-  const pan = Gesture.Pan()
-    .maxPointers(1) // 1 finger = pan / swipe-to-dismiss; 2 fingers = pinch only
+  // Active only at 1x: vertical swipe-to-dismiss. `failOffsetX` makes it bail on
+  // horizontal drags so the pager gets them; `activeOffsetY` keeps it from
+  // stealing taps.
+  const dismissPan = Gesture.Pan()
+    .enabled(!zoomed)
+    .maxPointers(1)
+    .activeOffsetY([-AXIS_SLOP, AXIS_SLOP])
+    .failOffsetX([-AXIS_SLOP, AXIS_SLOP])
     .onUpdate((e) => {
-      if (scale.value > 1) {
-        // Pan the zoomed image within its scaled bounds.
-        const maxX = ((scale.value - 1) * width) / 2;
-        const maxY = ((scale.value - 1) * height) / 2;
-        translateX.value = clamp(savedX.value + e.translationX, -maxX, maxX);
-        translateY.value = clamp(savedY.value + e.translationY, -maxY, maxY);
-      } else {
-        // At 1x: vertical swipe (up or down) to dismiss; image follows finger.
-        translateY.value = e.translationY;
-        translateX.value = e.translationX * 0.4;
-        // eslint-disable-next-line react-hooks/immutability
-        dragProgress.value = clamp(Math.abs(e.translationY) / (height / 2), 0, 1);
-      }
+      translateY.value = e.translationY;
+      // eslint-disable-next-line react-hooks/immutability
+      dragProgress.value = clamp(Math.abs(e.translationY) / (height / 2), 0, 1);
     })
     .onEnd((e) => {
-      if (scale.value > 1) {
-        savedX.value = translateX.value;
-        savedY.value = translateY.value;
-        return;
-      }
       const dismissed =
         Math.abs(e.translationY) > DISMISS_THRESHOLD ||
         Math.abs(e.velocityY) > DISMISS_VELOCITY;
@@ -100,12 +109,28 @@ export function ZoomableImage({ uri, thumbUri, onDismiss, dragProgress }: Props)
       }
     });
 
+  // Active only when zoomed: pan within the scaled image's bounds. The pager is
+  // frozen in this state, so this pan can own both axes freely.
+  const zoomPan = Gesture.Pan()
+    .enabled(zoomed)
+    .onUpdate((e) => {
+      const maxX = ((scale.value - 1) * width) / 2;
+      const maxY = ((scale.value - 1) * height) / 2;
+      translateX.value = clamp(savedX.value + e.translationX, -maxX, maxX);
+      translateY.value = clamp(savedY.value + e.translationY, -maxY, maxY);
+    })
+    .onEnd(() => {
+      savedX.value = translateX.value;
+      savedY.value = translateY.value;
+    });
+
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
     .maxDuration(250)
     .onEnd((e) => {
       if (scale.value > 1) {
         resetToFit();
+        runOnJS(reportZoom)(false);
       } else {
         // Zoom toward the tapped point, keeping it stationary under the finger.
         scale.value = withSpring(DOUBLE_TAP_SCALE);
@@ -116,12 +141,13 @@ export function ZoomableImage({ uri, thumbUri, onDismiss, dragProgress }: Props)
         translateY.value = withSpring(ty);
         savedX.value = tx;
         savedY.value = ty;
+        runOnJS(reportZoom)(true);
       }
     });
 
   const gesture = Gesture.Race(
     doubleTap,
-    Gesture.Simultaneous(pinch, pan),
+    Gesture.Simultaneous(pinch, dismissPan, zoomPan),
   );
 
   const imageStyle = useAnimatedStyle(() => ({

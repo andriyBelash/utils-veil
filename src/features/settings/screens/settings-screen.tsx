@@ -29,7 +29,11 @@ const THEME_LABEL: Record<ThemePreference, keyof ReturnType<typeof useLocale>['t
   system: 'themeSystem',
 };
 
-export function SettingsScreen() {
+type Props = {
+  showBackButton?: boolean;
+};
+
+export function SettingsScreen({ showBackButton = true }: Props) {
   const theme = useTheme();
   const router = useRouter();
   const [themeSheetOpen, setThemeSheetOpen] = useState(false);
@@ -52,17 +56,21 @@ export function SettingsScreen() {
     <ThemedView style={styles.container}>
       <SafeAreaView edges={['top', 'left', 'right']} style={styles.safeArea}>
         <View style={[styles.header, { borderBottomColor: theme.backgroundElement }]}>
-          <Pressable
-            onPress={() => router.back()}
-            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-          >
-            <SymbolView
-              name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
-              size={14}
-              tintColor={theme.text}
-            />
-            <ThemedText type="default">{t.settings.backToVault}</ThemedText>
-          </Pressable>
+          {showBackButton ? (
+            <Pressable
+              onPress={() => router.back()}
+              style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+            >
+              <SymbolView
+                name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }}
+                size={14}
+                tintColor={theme.text}
+              />
+              <ThemedText type="default">{t.settings.backToVault}</ThemedText>
+            </Pressable>
+          ) : (
+            <View style={styles.backButton} />
+          )}
 
           <ThemedText type="default" style={styles.title}>
             {t.settings.title}

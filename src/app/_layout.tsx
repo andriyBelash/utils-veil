@@ -38,12 +38,12 @@ function AppContent() {
 
   return (
     <Stack screenOptions={{ animation: "none", headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="settings" />
+      <Stack.Screen name="(tabs)" />
       <Stack.Screen
         name="item/[id]"
         options={{ presentation: "fullScreenModal", animation: "fade" }}
       />
+      <Stack.Screen name="album/[id]" />
       <Stack.Screen name="privacy-policy" />
     </Stack>
   );

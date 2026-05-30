@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="512" height="512" role="img" aria-label="veil app icon">
+  <defs><mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="200" height="200">
+      <rect x="0" y="0" width="200" height="200" fill="black"></rect>
+      <circle cx="100" cy="100" r="70" fill="white"></circle>
+      <path d="M 117.321 70 L 163.246 70 M 134.641 100 L 157.604 139.772 M 117.321 130 L 94.358 169.772 M 82.679 130 L 36.754 130 M 65.359 100 L 42.396 60.228 M 82.679 70 L 105.642 30.228" fill="none" stroke="black" stroke-width="3" stroke-linecap="round"></path>
+      <path d="M 117.321 70 L 134.641 100 L 117.321 130 L 82.679 130 L 65.359 100 L 82.679 70 Z" fill="none" stroke="black" stroke-width="1.8" stroke-linejoin="round"></path>
+      <path d="M 95.35 104.833 A 12.9 12.9 0 1 1 104.65 104.833 L 108.1 119.8 L 91.9 119.8 Z" fill="black"></path>
+    </mask></defs>
+  <rect x="0" y="0" width="200" height="200" rx="46" fill="#1A1A1A"></rect>
+  <g transform="translate(22 22) scale(0.78)">
+    <circle cx="100" cy="100" r="82" fill="none" stroke="#FCFCFC" stroke-width="7"></circle>
+    <circle cx="100" cy="100" r="70" fill="#FCFCFC" mask="url(#m)"></circle>
+  </g>
+</svg>

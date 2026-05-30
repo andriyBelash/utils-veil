@@ -1,16 +1,38 @@
+import { FlashList } from '@shopify/flash-list';
+import * as Crypto from 'expo-crypto';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { memo, useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useLocale } from '@/features/localization';
 
+import { AlbumPickerSheet } from '../components/album-picker-sheet';
 import { ZoomableImage } from '../components/zoomable-image';
-import { getItem, setFavorite } from '../lib/db';
+import {
+  createAlbum,
+  getAlbumsWithMeta,
+  getAllItems,
+  setAlbumForItems,
+  setFavorite,
+} from '../lib/db';
 import { getCachedThumb } from '../lib/media-cache';
 import {
   decryptFullToDataUri,
@@ -19,87 +41,208 @@ import {
   saveToDevice,
   shareItem,
 } from '../lib/media-import';
-import type { VaultItem } from '../lib/types';
+import type { AlbumWithMeta, VaultItem } from '../lib/types';
 
-function formatStamp(ms: number, locale: string): { date: string; time: string } {
+function formatStamp(
+  ms: number,
+  locale: string,
+): { date: string; time: string } {
   const d = new Date(ms);
   try {
     return {
       date: d.toLocaleDateString(locale, { day: 'numeric', month: 'long' }),
-      time: d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
+      time: d.toLocaleTimeString(locale, {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
     };
   } catch {
     return { date: d.toDateString(), time: d.toTimeString().slice(0, 5) };
   }
 }
 
+// One swipeable page. Decrypts its own thumb + full image and cleans them up on
+// unmount. FlashList only mounts the visible window, so decryption stays lazy.
+type PageProps = {
+  item: VaultItem;
+  width: number;
+  dragProgress: SharedValue<number>;
+  onDismiss: () => void;
+  onZoomChange: (zoomed: boolean) => void;
+};
+
+const GalleryPage = memo(function GalleryPage({
+  item,
+  width,
+  dragProgress,
+  onDismiss,
+  onZoomChange,
+}: PageProps) {
+  const { height } = useWindowDimensions();
+  const [uri, setUri] = useState<string | null>(null);
+  // Instant placeholder when the thumb is already in memory (usual case: tapped
+  // from the grid); otherwise it's decrypted in the effect below (blur-up).
+  const [thumbUri, setThumbUri] = useState<string | null>(
+    () => getCachedThumb(item.id) ?? null,
+  );
+
+  // Each page is keyed by item id and memo'd, so a mounted page's `item` never
+  // changes — this runs once per page to decrypt its thumb + full image.
+  useEffect(() => {
+    let active = true;
+    if (!getCachedThumb(item.id)) {
+      decryptThumbToDataUri(item)
+        .then((u) => {
+          if (active && u) setThumbUri(u);
+        })
+        .catch(() => {});
+    }
+    decryptFullToDataUri(item)
+      .then((u) => {
+        if (active) setUri(u);
+      })
+      .catch(() => {
+        // corrupt/undecryptable — placeholder stays
+      });
+    return () => {
+      active = false;
+    };
+  }, [item]);
+
+  return (
+    <View style={{ width, height }}>
+      {uri || thumbUri ? (
+        <ZoomableImage
+          uri={uri}
+          thumbUri={thumbUri}
+          onDismiss={onDismiss}
+          dragProgress={dragProgress}
+          onZoomChange={onZoomChange}
+        />
+      ) : (
+        <View style={styles.center}>
+          <ActivityIndicator color="#ffffff" />
+        </View>
+      )}
+    </View>
+  );
+});
+
 export function ItemDetailScreen() {
   const router = useRouter();
   const { t, locale } = useLocale();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { width } = useWindowDimensions();
+  const { id, fav, album } = useLocalSearchParams<{
+    id: string;
+    fav?: string;
+    album?: string;
+  }>();
 
-  const [item, setItem] = useState<VaultItem | null>(null);
-  const [uri, setUri] = useState<string | null>(null);
-  // Low-res preview shown instantly while the full image decrypts (blur-up).
-  const [thumbUri, setThumbUri] = useState<string | null>(null);
-  const [favorite, setFavoriteState] = useState(false);
+  const [items, setItems] = useState<VaultItem[] | null>(null);
+  const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Frozen while the current image is zoomed in, so paging doesn't fight pan.
+  const [zoomed, setZoomed] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [albums, setAlbums] = useState<AlbumWithMeta[]>([]);
+
+  const loadAlbums = useCallback(async () => {
+    try {
+      setAlbums(await getAlbumsWithMeta());
+    } catch {
+      // leave the list as-is; the picker still offers "new album"
+    }
+  }, []);
+
+  // Load the album list lazily when the picker opens (also picks up albums
+  // created since the screen mounted), avoiding a setState-on-mount effect.
+  const openPicker = useCallback(() => {
+    loadAlbums();
+    setPickerOpen(true);
+  }, [loadAlbums]);
 
   // 0 → at rest, 1 → fully swiped away. Fades the chrome out as you drag.
   const dragProgress = useSharedValue(0);
-  const chromeStyle = useAnimatedStyle(() => ({ opacity: 1 - dragProgress.value }));
+  const chromeStyle = useAnimatedStyle(() => ({
+    opacity: 1 - dragProgress.value,
+  }));
 
+  // Load the gallery set in the same order the grid showed, and start on the
+  // tapped item.
   useEffect(() => {
     let active = true;
     (async () => {
-      const loaded = await getItem(id);
-      if (!active || !loaded) return;
-      setItem(loaded);
-      setFavoriteState(loaded.isFavorite);
-      // Instant placeholder: the thumb is usually already in memory from the
-      // grid tap; if not (deep link), decrypt it — it's tiny and fast.
-      const cachedThumb = getCachedThumb(loaded.id);
-      if (cachedThumb) {
-        setThumbUri(cachedThumb);
-      } else {
-        decryptThumbToDataUri(loaded)
-          .then((u) => {
-            if (active && u) setThumbUri(u);
-          })
-          .catch(() => {});
-      }
-      try {
-        const dataUri = await decryptFullToDataUri(loaded);
-        if (active) setUri(dataUri);
-      } catch {
-        // corrupt/undecryptable — placeholder stays; user can still delete
-      }
+      const all = await getAllItems(album);
+      const list = fav === '1' ? all.filter((it) => it.isFavorite) : all;
+      if (!active) return;
+      const start = Math.max(
+        0,
+        list.findIndex((it) => it.id === id),
+      );
+      setItems(list);
+      setIndex(start);
     })();
     return () => {
       active = false;
     };
-  }, [id]);
+  }, [id, fav, album]);
 
-  const stamp = item ? formatStamp(item.createdAt, locale) : null;
+  const current =
+    items && items.length > 0 ? items[Math.min(index, items.length - 1)] : null;
+  const stamp = current ? formatStamp(current.createdAt, locale) : null;
 
-  function goBack() {
+  const goBack = useCallback(() => {
     if (router.canGoBack()) router.back();
     else router.replace('/');
-  }
+  }, [router]);
+
+  const onMomentumScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const next = Math.round(e.nativeEvent.contentOffset.x / width);
+      setIndex(next);
+    },
+    [width],
+  );
 
   async function toggleFavorite() {
-    if (!item) return;
-    const next = !favorite;
-    setFavoriteState(next);
-    await setFavorite(item.id, next);
+    if (!current) return;
+    const next = !current.isFavorite;
+    setItems((prev) =>
+      prev
+        ? prev.map((it) =>
+            it.id === current.id ? { ...it, isFavorite: next } : it,
+          )
+        : prev,
+    );
+    await setFavorite(current.id, next);
+  }
+
+  async function moveToAlbum(albumId: string) {
+    setPickerOpen(false);
+    if (!current) return;
+    const moved = current;
+    await setAlbumForItems([moved.id], albumId);
+    // Reflect the new membership locally so chrome/state stays consistent.
+    setItems((prev) =>
+      prev
+        ? prev.map((it) => (it.id === moved.id ? { ...it, albumId } : it))
+        : prev,
+    );
+  }
+
+  async function createAndMove(name: string): Promise<string> {
+    const id = Crypto.randomUUID();
+    await createAlbum(id, name);
+    await loadAlbums();
+    return id;
   }
 
   async function handleShare() {
-    if (!item || busy) return;
+    if (!current || busy) return;
     setBusy(true);
     try {
-      await shareItem(item);
+      await shareItem(current);
     } catch {
       // share cancelled or unavailable
     } finally {
@@ -108,10 +251,10 @@ export function ItemDetailScreen() {
   }
 
   async function handleSave() {
-    if (!item || busy) return;
+    if (!current || busy) return;
     setBusy(true);
     try {
-      const ok = await saveToDevice(item);
+      const ok = await saveToDevice(current);
       if (!ok) {
         Alert.alert(t.home.savePermissionTitle, t.home.savePermissionMessage);
       } else {
@@ -125,29 +268,58 @@ export function ItemDetailScreen() {
   }
 
   function confirmDelete() {
-    if (!item) return;
+    if (!current) return;
     Alert.alert(t.home.deleteTitle, t.home.deleteMessage, [
       { text: t.home.cancel, style: 'cancel' },
       {
         text: t.home.deleteConfirm,
         style: 'destructive',
         onPress: async () => {
-          await removeItem(item);
-          goBack();
+          const removed = current;
+          await removeItem(removed);
+          setItems((prev) => {
+            const next = prev
+              ? prev.filter((it) => it.id !== removed.id)
+              : prev;
+            if (!next || next.length === 0) {
+              goBack();
+              return next;
+            }
+            setIndex((i) => Math.min(i, next.length - 1));
+            return next;
+          });
         },
       },
     ]);
   }
 
+  const renderItem = useCallback(
+    ({ item }: { item: VaultItem }) => (
+      <GalleryPage
+        item={item}
+        width={width}
+        dragProgress={dragProgress}
+        onDismiss={goBack}
+        onZoomChange={setZoomed}
+      />
+    ),
+    [width, dragProgress, goBack],
+  );
+
   return (
     <View style={styles.container}>
-      {/* Full-screen photo: pinch-zoom, pan, swipe up/down to dismiss */}
-      {uri || thumbUri ? (
-        <ZoomableImage
-          uri={uri}
-          thumbUri={thumbUri}
-          onDismiss={goBack}
-          dragProgress={dragProgress}
+      {/* Horizontal pager: swipe left/right to switch photos, like a gallery */}
+      {items && items.length > 0 ? (
+        <FlashList
+          data={items}
+          keyExtractor={(it) => it.id}
+          renderItem={renderItem}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          scrollEnabled={!zoomed}
+          initialScrollIndex={index}
+          onMomentumScrollEnd={onMomentumScrollEnd}
         />
       ) : (
         <View style={styles.center}>
@@ -169,8 +341,18 @@ export function ItemDetailScreen() {
         pointerEvents="box-none"
       >
         {/* Top bar: back · date/time · spacer */}
-        <Animated.View style={[styles.topBar, chromeStyle]} pointerEvents="box-none">
-          <CircleButton icon={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} onPress={goBack} />
+        <Animated.View
+          style={[styles.topBar, chromeStyle]}
+          pointerEvents="box-none"
+        >
+          <CircleButton
+            icon={{
+              ios: 'chevron.left',
+              android: 'arrow_back',
+              web: 'arrow_back',
+            }}
+            onPress={goBack}
+          />
           <View style={styles.stamp} pointerEvents="none">
             {stamp ? (
               <>
@@ -183,9 +365,16 @@ export function ItemDetailScreen() {
         </Animated.View>
 
         {/* Bottom toolbar: share · save · favorite · delete */}
-        <Animated.View style={[styles.toolbar, chromeStyle]} pointerEvents="box-none">
+        <Animated.View
+          style={[styles.toolbar, chromeStyle]}
+          pointerEvents="box-none"
+        >
           <CircleButton
-            icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
+            icon={{
+              ios: 'square.and.arrow.up',
+              android: 'share',
+              web: 'share',
+            }}
             onPress={handleShare}
             disabled={busy}
           />
@@ -199,13 +388,26 @@ export function ItemDetailScreen() {
             disabled={busy}
           />
           <CircleButton
+            icon={{
+              ios: 'rectangle.stack.badge.plus',
+              android: 'add',
+              web: 'add',
+            }}
+            onPress={openPicker}
+            disabled={!current}
+          />
+          <CircleButton
             icon={
-              favorite
+              current?.isFavorite
                 ? { ios: 'heart.fill', android: 'favorite', web: 'favorite' }
-                : { ios: 'heart', android: 'favorite_border', web: 'favorite_border' }
+                : {
+                    ios: 'heart',
+                    android: 'favorite_border',
+                    web: 'favorite_border',
+                  }
             }
             onPress={toggleFavorite}
-            tint={favorite ? '#ff3b30' : '#ffffff'}
+            tint={current?.isFavorite ? '#ff3b30' : '#ffffff'}
           />
           <CircleButton
             icon={{ ios: 'trash', android: 'delete', web: 'delete' }}
@@ -214,6 +416,14 @@ export function ItemDetailScreen() {
           />
         </Animated.View>
       </View>
+
+      <AlbumPickerSheet
+        isOpen={pickerOpen}
+        albums={albums}
+        onPick={moveToAlbum}
+        onCreate={createAndMove}
+        onClose={() => setPickerOpen(false)}
+      />
     </View>
   );
 }
@@ -225,7 +435,12 @@ type CircleButtonProps = {
   disabled?: boolean;
 };
 
-function CircleButton({ icon, onPress, tint = '#ffffff', disabled }: CircleButtonProps) {
+function CircleButton({
+  icon,
+  onPress,
+  tint = '#ffffff',
+  disabled,
+}: CircleButtonProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -255,11 +470,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   center: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

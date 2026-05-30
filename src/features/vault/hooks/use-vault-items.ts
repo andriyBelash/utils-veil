@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { getAllItems } from '../lib/db';
 import type { VaultItem } from '../lib/types';
@@ -9,7 +9,12 @@ type State = {
   loading: boolean;
 };
 
-export function useVaultItems(albumId?: string) {
+/**
+ * Loads vault items (optionally scoped to one album). Reloads on screen focus
+ * and whenever `reloadKey` changes — the latter lets a parent tab host force a
+ * refresh after an action it owns (e.g. import) mutates the data.
+ */
+export function useVaultItems(albumId?: string, reloadKey?: number) {
   const [state, setState] = useState<State>({ items: [], loading: true });
 
   // Note: we don't flip `loading` back to true on refetch. The hook reloads on
@@ -30,6 +35,10 @@ export function useVaultItems(albumId?: string) {
       load();
     }, [load]),
   );
+
+  useEffect(() => {
+    load();
+  }, [load, reloadKey]);
 
   return { ...state, reload: load };
 }

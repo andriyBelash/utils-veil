@@ -1,6 +1,13 @@
 import * as SQLite from 'expo-sqlite';
 
-import type { Album, NewVaultItem, VaultItem } from './types';
+import type { Album, AlbumWithMeta, NewVaultItem, VaultItem } from './types';
+
+/**
+ * Reserved id of the always-present "No album" album. Every imported photo
+ * lands here until moved into a user album, so an item's `album_id` is never
+ * NULL. The stored name is a fallback — the UI shows a localized label for it.
+ */
+export const DEFAULT_ALBUM_ID = '__default__';
 
 let db: SQLite.SQLiteDatabase | null = null;
 
@@ -45,6 +52,16 @@ export async function openVaultDb(rawKeyHex: string): Promise<void> {
   // Forces SQLCipher to read the header; a wrong key throws here.
   await database.getFirstAsync('SELECT count(*) FROM sqlite_master');
   await database.execAsync(SCHEMA);
+  // Guarantee the default album exists and absorb any legacy album-less items,
+  // so the "no album" state is a real album rather than a NULL.
+  await database.runAsync(
+    'INSERT OR IGNORE INTO albums (id, name, cover_item_id, created_at) VALUES (?, ?, NULL, 0)',
+    [DEFAULT_ALBUM_ID, 'No album'],
+  );
+  await database.runAsync(
+    'UPDATE vault_items SET album_id = ? WHERE album_id IS NULL',
+    [DEFAULT_ALBUM_ID],
+  );
   db = database;
 }
 
@@ -92,6 +109,8 @@ export async function insertItem(item: NewVaultItem): Promise<VaultItem> {
   const database = getDb();
   const createdAt = Date.now();
   const isFavorite = item.isFavorite ? 1 : 0;
+  // An item always belongs to an album; absent one, it goes to the default.
+  const albumId = item.albumId ?? DEFAULT_ALBUM_ID;
   await database.runAsync(
     `INSERT INTO vault_items
        (id, original_name, encrypted_path, thumb_path, mime_type, size_bytes, created_at, album_id, is_favorite)
@@ -104,11 +123,11 @@ export async function insertItem(item: NewVaultItem): Promise<VaultItem> {
       item.mimeType,
       item.sizeBytes,
       createdAt,
-      item.albumId,
+      albumId,
       isFavorite,
     ],
   );
-  return { ...item, createdAt, isFavorite: item.isFavorite ?? false };
+  return { ...item, albumId, createdAt, isFavorite: item.isFavorite ?? false };
 }
 
 export async function getAllItems(albumId?: string): Promise<VaultItem[]> {
@@ -118,13 +137,18 @@ export async function getAllItems(albumId?: string): Promise<VaultItem[]> {
         'SELECT * FROM vault_items WHERE album_id = ? ORDER BY created_at DESC',
         [albumId],
       )
-    : await database.getAllAsync<ItemRow>('SELECT * FROM vault_items ORDER BY created_at DESC');
+    : await database.getAllAsync<ItemRow>(
+        'SELECT * FROM vault_items ORDER BY created_at DESC',
+      );
   return rows.map(rowToItem);
 }
 
 export async function getItem(id: string): Promise<VaultItem | null> {
   const database = getDb();
-  const row = await database.getFirstAsync<ItemRow>('SELECT * FROM vault_items WHERE id = ?', [id]);
+  const row = await database.getFirstAsync<ItemRow>(
+    'SELECT * FROM vault_items WHERE id = ?',
+    [id],
+  );
   return row ? rowToItem(row) : null;
 }
 
@@ -133,16 +157,22 @@ export async function deleteItem(id: string): Promise<void> {
   await database.runAsync('DELETE FROM vault_items WHERE id = ?', [id]);
 }
 
-export async function setFavorite(id: string, isFavorite: boolean): Promise<void> {
+export async function setFavorite(
+  id: string,
+  isFavorite: boolean,
+): Promise<void> {
   const database = getDb();
-  await database.runAsync('UPDATE vault_items SET is_favorite = ? WHERE id = ?', [
-    isFavorite ? 1 : 0,
-    id,
-  ]);
+  await database.runAsync(
+    'UPDATE vault_items SET is_favorite = ? WHERE id = ?',
+    [isFavorite ? 1 : 0, id],
+  );
 }
 
 /** Bulk variant of {@link setFavorite}: flips the flag for many items at once. */
-export async function setFavoriteMany(ids: string[], isFavorite: boolean): Promise<void> {
+export async function setFavoriteMany(
+  ids: string[],
+  isFavorite: boolean,
+): Promise<void> {
   if (ids.length === 0) return;
   const database = getDb();
   const placeholders = ids.map(() => '?').join(',');
@@ -152,9 +182,28 @@ export async function setFavoriteMany(ids: string[], isFavorite: boolean): Promi
   );
 }
 
+/** Sets (or clears, with null) the album membership for many items at once. */
+export async function setAlbumForItems(
+  ids: string[],
+  albumId: string | null,
+): Promise<void> {
+  if (ids.length === 0) return;
+  const database = getDb();
+  const placeholders = ids.map(() => '?').join(',');
+  await database.runAsync(
+    `UPDATE vault_items SET album_id = ? WHERE id IN (${placeholders})`,
+    [albumId, ...ids],
+  );
+}
+
 // ===== albums =====
 
-type AlbumRow = { id: string; name: string; cover_item_id: string | null; created_at: number };
+type AlbumRow = {
+  id: string;
+  name: string;
+  cover_item_id: string | null;
+  created_at: number;
+};
 
 export async function createAlbum(id: string, name: string): Promise<Album> {
   const database = getDb();
@@ -168,7 +217,9 @@ export async function createAlbum(id: string, name: string): Promise<Album> {
 
 export async function getAlbums(): Promise<Album[]> {
   const database = getDb();
-  const rows = await database.getAllAsync<AlbumRow>('SELECT * FROM albums ORDER BY created_at DESC');
+  const rows = await database.getAllAsync<AlbumRow>(
+    'SELECT * FROM albums ORDER BY created_at DESC',
+  );
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -178,7 +229,35 @@ export async function getAlbums(): Promise<Album[]> {
 }
 
 export async function deleteAlbum(id: string): Promise<void> {
+  if (id === DEFAULT_ALBUM_ID) return; // the default album is permanent
   const database = getDb();
-  await database.runAsync('UPDATE vault_items SET album_id = NULL WHERE album_id = ?', [id]);
+  // Photos fall back to the default album rather than becoming album-less.
+  await database.runAsync(
+    'UPDATE vault_items SET album_id = ? WHERE album_id = ?',
+    [DEFAULT_ALBUM_ID, id],
+  );
   await database.runAsync('DELETE FROM albums WHERE id = ?', [id]);
+}
+
+/** Albums with photo count + a cover (the most recent photo in each album). */
+export async function getAlbumsWithMeta(): Promise<AlbumWithMeta[]> {
+  const database = getDb();
+  const albums = await getAlbums();
+  const result: AlbumWithMeta[] = [];
+  for (const album of albums) {
+    const countRow = await database.getFirstAsync<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM vault_items WHERE album_id = ?',
+      [album.id],
+    );
+    const coverRow = await database.getFirstAsync<ItemRow>(
+      'SELECT * FROM vault_items WHERE album_id = ? ORDER BY created_at DESC LIMIT 1',
+      [album.id],
+    );
+    result.push({
+      ...album,
+      count: countRow?.c ?? 0,
+      coverItem: coverRow ? rowToItem(coverRow) : null,
+    });
+  }
+  return result;
 }
