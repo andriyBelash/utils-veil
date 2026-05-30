@@ -31,8 +31,6 @@ import { useTheme } from "@/hooks/use-theme";
 
 const COLUMNS = 3;
 
-const LOGO = require("@/assets/images/adaptive-icon.png");
-
 export function HomeScreen() {
   const theme = useTheme();
   const router = useRouter();

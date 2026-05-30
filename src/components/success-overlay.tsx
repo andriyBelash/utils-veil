@@ -29,7 +29,9 @@ export function SuccessOverlay({ icon = DEFAULT_ICON, tint = '#34c759', onFinish
   const ringOpacity = useSharedValue(0);
 
   const onFinishRef = useRef(onFinish);
-  onFinishRef.current = onFinish;
+  useEffect(() => {
+    onFinishRef.current = onFinish;
+  });
 
   useEffect(() => {
     circleScale.value = withSequence(
@@ -60,7 +62,7 @@ export function SuccessOverlay({ icon = DEFAULT_ICON, tint = '#34c759', onFinish
 
     const timer = setTimeout(() => onFinishRef.current?.(), TOTAL_MS);
     return () => clearTimeout(timer);
-  }, []);
+  }, [circleScale, checkScale, checkOpacity, ringScale, ringOpacity]);
 
   const circleStyle = useAnimatedStyle(() => ({
     transform: [{ scale: circleScale.value }],

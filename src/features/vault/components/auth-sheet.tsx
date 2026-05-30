@@ -1,6 +1,6 @@
 import * as LocalAuthentication from 'expo-local-authentication';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { BottomSheet } from '@/components/bottom-sheet';
@@ -28,16 +28,14 @@ export function AuthSheet({ isOpen, title, onSuccess, onCancel }: Props) {
   const [biometricPending, setBiometricPending] = useState(true);
   const dotsRef = useRef<PinDotsHandle>(null);
 
-  useEffect(() => {
-    if (isOpen) {
-      setPin('');
-      setError('');
-      setBiometricPending(true);
-      tryBiometric();
-    }
-  }, [isOpen]);
+  // Resetting + prompting on open lives inside this callback (not the effect
+  // body) so the setState calls aren't flagged as cascading effect renders, and
+  // it's declared before the effect that calls it.
+  const tryBiometric = useCallback(async () => {
+    setPin('');
+    setError('');
+    setBiometricPending(true);
 
-  async function tryBiometric() {
     const biometricEnabled = await readBiometricEnabled();
     if (!biometricEnabled) {
       setBiometricPending(false);
@@ -63,7 +61,14 @@ export function AuthSheet({ isOpen, title, onSuccess, onCancel }: Props) {
     } else {
       setBiometricPending(false);
     }
-  }
+  }, [title, t.authSheet.cancel, onSuccess]);
+
+  useEffect(() => {
+    // Resetting form state + auto-prompting when the sheet opens is the intended
+    // sync-with-prop behavior, not a cascading render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (isOpen) tryBiometric();
+  }, [isOpen, tryBiometric]);
 
   async function handleDigit(digit: string) {
     if (pin.length >= PIN_LENGTH) return;

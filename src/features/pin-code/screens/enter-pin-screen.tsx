@@ -58,6 +58,9 @@ export function EnterPinScreen() {
     }
   }, [t, unlockWithBiometric]);
 
+  // Only decides whether to show the manual biometric button. The actual
+  // auto-prompt (cold start + return-from-background) is owned by useAutoLock,
+  // so the prompt fires from exactly one place and never doubles up.
   useEffect(() => {
     if (didInitBiometric.current) return;
     didInitBiometric.current = true;
@@ -72,9 +75,8 @@ export function EnterPinScreen() {
       if (!hasHardware || !isEnrolled) return;
 
       setBiometricVisible(true);
-      triggerBiometric();
     })();
-  }, [triggerBiometric]);
+  }, []);
 
   const attemptUnlock = useCallback(
     async (value: string) => {

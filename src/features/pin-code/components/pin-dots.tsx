@@ -47,6 +47,8 @@ export const PinDots = forwardRef<PinDotsHandle, { length: number }>(({ length }
   );
 });
 
+PinDots.displayName = 'PinDots';
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,15 +18,15 @@ export function CreatePinScreen() {
   const [pin, setPin] = useState('');
   const dotsRef = useRef<PinDotsHandle>(null);
 
-  useEffect(() => {
-    if (pin.length === 6) {
-      startConfirm(pin);
-      setPin('');
-    }
-  }, [pin, startConfirm]);
-
   function handleDigit(digit: string) {
-    setPin((p) => (p.length < 6 ? p + digit : p));
+    if (pin.length >= 6) return;
+    const next = pin + digit;
+    if (next.length === 6) {
+      startConfirm(next);
+      setPin('');
+    } else {
+      setPin(next);
+    }
   }
 
   function handleDelete() {

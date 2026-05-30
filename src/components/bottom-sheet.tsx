@@ -27,6 +27,8 @@ export function BottomSheet({ isOpen, onClose, children }: Props) {
 
   useEffect(() => {
     if (isOpen) {
+      // Mount the Modal first, then run the open animation on its shared values.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setModalVisible(true);
       dragY.value = 0;
       opacity.value = withTiming(1, { duration: 200 });
@@ -37,11 +39,12 @@ export function BottomSheet({ isOpen, onClose, children }: Props) {
         if (finished) runOnJS(setModalVisible)(false);
       });
     }
-  }, [isOpen]);
+  }, [isOpen, dragY, opacity, translateY]);
 
   const pan = Gesture.Pan()
     .onUpdate((e) => {
       if (e.translationY > 0) {
+        // eslint-disable-next-line react-hooks/immutability
         dragY.value = e.translationY;
       }
     })
@@ -49,6 +52,7 @@ export function BottomSheet({ isOpen, onClose, children }: Props) {
       if (e.translationY > CLOSE_THRESHOLD) {
         runOnJS(onClose)();
       } else {
+        // eslint-disable-next-line react-hooks/immutability
         dragY.value = withTiming(0, { duration: 200 });
       }
     });

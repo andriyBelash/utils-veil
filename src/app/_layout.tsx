@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { Appearance, useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
-import { LocaleProvider } from "@/features/localization";
+import { LocaleProvider, useLocale } from "@/features/localization";
 import {
   ConfirmPinScreen,
   CreatePinScreen,
@@ -20,8 +20,13 @@ import { readThemePreference } from "@/features/settings/lib/theme-storage";
 import { useAutoLock } from "@/hooks/use-auto-lock";
 
 function AppContent() {
-  const { flowState, lock } = usePinContext();
-  useAutoLock(lock);
+  const { flowState, lock, unlockWithBiometric } = usePinContext();
+  const { t } = useLocale();
+  useAutoLock({
+    lock,
+    unlockWithBiometric,
+    biometricPrompt: t.pin.biometricPrompt,
+  });
 
   if (flowState === "loading") return null;
   if (flowState === "create") return <CreatePinScreen />;
