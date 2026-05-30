@@ -48,6 +48,20 @@
         {
           "photosPermission": "Veil imports the photos you select into your on-device encrypted vault."
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "savePhotosPermission": "Veil saves the photos you export from your vault back to your device library.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
+        "react-native-share",
+        {
+          "ios": [],
+          "android": []
+        }
       ]
     ],
     "experiments": {

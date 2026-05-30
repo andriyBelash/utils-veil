@@ -2,7 +2,9 @@ import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
+import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
+import Share from 'react-native-share';
 
 import { bytesToBase64, bytesToBase64Async } from './crypto-primitives';
 import { deleteItem, insertItem } from './db';
@@ -118,7 +120,7 @@ export async function decryptThumbToDataUri(item: VaultItem): Promise<string | n
 // native bridge and wasting work on cells that already scrolled off-screen.
 const MAX_CONCURRENT_THUMBS = 4;
 let activeThumbs = 0;
-const thumbWaiters: Array<() => void> = [];
+const thumbWaiters: (() => void)[] = [];
 
 function acquireThumbSlot(): Promise<void> {
   if (activeThumbs < MAX_CONCURRENT_THUMBS) {
@@ -162,26 +164,79 @@ export async function decryptFullToDataUri(item: VaultItem): Promise<string> {
 }
 
 /**
- * User-initiated export through the system share sheet. This DELIBERATELY takes
- * a photo out of the vault: it decrypts to a short-lived plaintext temp file in
- * the cache, shares it, then wipes the temp file. The plaintext only exists in
- * cache for the duration of the share.
+ * Decrypts an item to a short-lived plaintext temp file in the cache and returns
+ * its uri. The caller MUST wipe it (safeDelete) once done — this DELIBERATELY
+ * materializes plaintext outside the vault for export/share/save flows.
  */
-export async function shareItem(item: VaultItem): Promise<void> {
-  if (!(await Sharing.isAvailableAsync())) return;
+async function decryptToTempFile(item: VaultItem): Promise<string> {
   const blob = new File(item.encryptedPath).bytesSync();
   const plain = await decryptFileBytes(item.id, blob);
-
   const safeName = (item.originalName || `${item.id}.jpg`).replace(/[/\\:]/g, '_');
   const tmp = new File(Paths.cache, safeName);
   if (tmp.exists) safeDelete(tmp.uri);
   tmp.create();
   tmp.write(plain);
+  return tmp.uri;
+}
+
+/**
+ * User-initiated export through the system share sheet. The plaintext only
+ * exists as a temp file for the duration of the share, then is wiped.
+ */
+export async function shareItem(item: VaultItem): Promise<void> {
+  if (!(await Sharing.isAvailableAsync())) return;
+  const tmp = await decryptToTempFile(item);
   try {
-    await Sharing.shareAsync(tmp.uri, { mimeType: item.mimeType ?? 'image/jpeg' });
+    await Sharing.shareAsync(tmp, { mimeType: item.mimeType ?? 'image/jpeg' });
   } finally {
-    safeDelete(tmp.uri);
+    safeDelete(tmp);
   }
+}
+
+/**
+ * Native multi-file share: decrypts every selected item to a temp plaintext file,
+ * opens a single system share sheet for all of them, then wipes the temps.
+ */
+export async function shareMany(items: VaultItem[]): Promise<void> {
+  if (items.length === 0) return;
+  if (items.length === 1) return shareItem(items[0]);
+  const temps: string[] = [];
+  try {
+    for (const item of items) temps.push(await decryptToTempFile(item));
+    await Share.open({ urls: temps, failOnCancel: false });
+  } catch {
+    // user cancelled or share unavailable
+  } finally {
+    temps.forEach(safeDelete);
+  }
+}
+
+/**
+ * User-initiated export: decrypts the photo to a short-lived plaintext temp file
+ * and saves a copy into the device's photo library, then wipes the temp file.
+ * Like {@link shareItem}, this DELIBERATELY moves plaintext out of the vault at
+ * the user's request. Uses write-only library permission (no read access).
+ * Returns false if the user denied the permission.
+ */
+export async function saveToDevice(item: VaultItem): Promise<boolean> {
+  return saveManyToDevice([item]);
+}
+
+/** Bulk variant of {@link saveToDevice}: asks for permission once, then saves all. */
+export async function saveManyToDevice(items: VaultItem[]): Promise<boolean> {
+  if (items.length === 0) return true;
+  const perm = await MediaLibrary.requestPermissionsAsync(true);
+  if (!perm.granted) return false;
+  for (const item of items) {
+    const tmp = await decryptToTempFile(item);
+    try {
+      // Class-based API; saveToLibraryAsync is deprecated and throws at runtime.
+      await MediaLibrary.Asset.create(tmp);
+    } finally {
+      safeDelete(tmp);
+    }
+  }
+  return true;
 }
 
 /** Deletes the encrypted files and the metadata row. */
@@ -190,4 +245,9 @@ export async function removeItem(item: VaultItem): Promise<void> {
   if (item.thumbPath) safeDelete(item.thumbPath);
   dropCachedThumb(item.id);
   await deleteItem(item.id);
+}
+
+/** Bulk variant of {@link removeItem}. */
+export async function removeMany(items: VaultItem[]): Promise<void> {
+  for (const item of items) await removeItem(item);
 }

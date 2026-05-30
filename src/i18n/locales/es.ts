@@ -40,6 +40,13 @@ export const es = {
     deleteConfirm: 'Eliminar',
     cancel: 'Cancelar',
     importing: 'Importando…',
+    savePermissionTitle: 'Se necesita acceso a la galería',
+    savePermissionMessage: 'Permite el acceso para guardar esta foto en tu dispositivo.',
+    savedTitle: 'Guardado en tu dispositivo',
+    selected: 'seleccionados',
+    favorites: 'Favoritos',
+    emptyFavoritesTitle: 'Aún no hay favoritos',
+    emptyFavoritesSubtitle: 'Toca el corazón de una foto para añadirla aquí.',
   },
   privacyPolicy: {
     updated: 'Última actualización: 25 de mayo de 2026',

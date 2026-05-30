@@ -40,6 +40,13 @@ export const pl = {
     deleteConfirm: 'Usuń',
     cancel: 'Anuluj',
     importing: 'Importowanie…',
+    savePermissionTitle: 'Wymagany dostęp do galerii',
+    savePermissionMessage: 'Zezwól na dostęp, aby zapisać to zdjęcie z powrotem na urządzeniu.',
+    savedTitle: 'Zapisano na urządzeniu',
+    selected: 'wybrano',
+    favorites: 'Ulubione',
+    emptyFavoritesTitle: 'Brak ulubionych',
+    emptyFavoritesSubtitle: 'Dotknij serca na zdjęciu, aby dodać je tutaj.',
   },
   privacyPolicy: {
     updated: 'Ostatnia aktualizacja: 25 maja 2026',

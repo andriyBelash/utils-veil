@@ -40,6 +40,13 @@ export const en = {
     deleteConfirm: 'Delete',
     cancel: 'Cancel',
     importing: 'Importing…',
+    savePermissionTitle: 'Photo library access needed',
+    savePermissionMessage: 'Allow access to save this photo back to your device.',
+    savedTitle: 'Saved to your device',
+    selected: 'selected',
+    favorites: 'Favorites',
+    emptyFavoritesTitle: 'No favorites yet',
+    emptyFavoritesSubtitle: 'Tap the heart on a photo to add it here.',
   },
   privacyPolicy: {
     updated: 'Last updated: May 25, 2026',

@@ -7,6 +7,7 @@ export {
   insertItem,
   deleteItem,
   setFavorite,
+  setFavoriteMany,
   getAlbums,
   createAlbum,
   deleteAlbum,
@@ -17,6 +18,9 @@ export {
   decryptThumbToDataUri,
   decryptFullToDataUri,
   shareItem,
+  shareMany,
+  saveManyToDevice,
   removeItem,
+  removeMany,
 } from './lib/media-import';
 export type { VaultItem, NewVaultItem, Album } from './lib/types';

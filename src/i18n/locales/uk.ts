@@ -40,6 +40,13 @@ export const uk = {
     deleteConfirm: 'Видалити',
     cancel: 'Скасувати',
     importing: 'Імпортування…',
+    savePermissionTitle: 'Потрібен доступ до галереї',
+    savePermissionMessage: 'Дозвольте доступ, щоб зберегти це фото назад на пристрій.',
+    savedTitle: 'Збережено на пристрій',
+    selected: 'вибрано',
+    favorites: 'Улюблені',
+    emptyFavoritesTitle: 'Поки немає улюблених',
+    emptyFavoritesSubtitle: 'Торкніться сердечка на фото, щоб додати його сюди.',
   },
   privacyPolicy: {
     updated: 'Оновлено: 25 травня 2026 р.',

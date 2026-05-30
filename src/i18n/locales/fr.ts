@@ -40,6 +40,13 @@ export const fr = {
     deleteConfirm: 'Supprimer',
     cancel: 'Annuler',
     importing: 'Importation…',
+    savePermissionTitle: 'Accès à la photothèque requis',
+    savePermissionMessage: 'Autorisez l’accès pour enregistrer cette photo sur votre appareil.',
+    savedTitle: 'Enregistré sur votre appareil',
+    selected: 'sélectionné(s)',
+    favorites: 'Favoris',
+    emptyFavoritesTitle: 'Aucun favori pour l’instant',
+    emptyFavoritesSubtitle: 'Touchez le cœur d’une photo pour l’ajouter ici.',
   },
   privacyPolicy: {
     updated: 'Dernière mise à jour : 25 mai 2026',

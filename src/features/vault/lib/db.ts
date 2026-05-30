@@ -141,6 +141,17 @@ export async function setFavorite(id: string, isFavorite: boolean): Promise<void
   ]);
 }
 
+/** Bulk variant of {@link setFavorite}: flips the flag for many items at once. */
+export async function setFavoriteMany(ids: string[], isFavorite: boolean): Promise<void> {
+  if (ids.length === 0) return;
+  const database = getDb();
+  const placeholders = ids.map(() => '?').join(',');
+  await database.runAsync(
+    `UPDATE vault_items SET is_favorite = ? WHERE id IN (${placeholders})`,
+    [isFavorite ? 1 : 0, ...ids],
+  );
+}
+
 // ===== albums =====
 
 type AlbumRow = { id: string; name: string; cover_item_id: string | null; created_at: number };

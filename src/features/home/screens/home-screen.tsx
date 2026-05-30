@@ -1,8 +1,7 @@
 import { FlashList, type ListRenderItemInfo } from "@shopify/flash-list";
-import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { SymbolView } from "expo-symbols";
-import { useCallback, useState } from "react";
+import { SymbolView, type SymbolViewProps } from "expo-symbols";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,7 +18,11 @@ import { Spacing } from "@/constants/theme";
 import { useLocale } from "@/features/localization";
 import {
   pickAndImport,
+  removeMany,
   requestLibraryPermission,
+  saveManyToDevice,
+  setFavoriteMany,
+  shareMany,
   ThumbCell,
   useVaultItems,
   type VaultItem,
@@ -36,15 +39,50 @@ export function HomeScreen() {
   const { t } = useLocale();
   const { items, loading, reload } = useVaultItems();
   const [importing, setImporting] = useState(false);
-  const [progress, setProgress] =
-    useState<{ done: number; total: number } | null>(null);
+  const [progress, setProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+
+  const selectionMode = selectedIds.size > 0;
+  const visibleItems = favoritesOnly
+    ? items.filter((it) => it.isFavorite)
+    : items;
+  // Mirror selection into a ref so the press handlers can stay referentially
+  // stable (cells don't all re-render) while still reading the latest state.
+  const selectedRef = useRef(selectedIds);
+  useEffect(() => {
+    selectedRef.current = selectedIds;
+  }, [selectedIds]);
 
   const { width } = useWindowDimensions();
   const cellSize = width / COLUMNS;
 
-  const openItem = useCallback(
-    (item: VaultItem) => router.push(`/item/${item.id}`),
-    [router],
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const onPressItem = useCallback(
+    (item: VaultItem) => {
+      if (selectedRef.current.size > 0) toggleSelect(item.id);
+      else router.push(`/item/${item.id}`);
+    },
+    [router, toggleSelect],
+  );
+
+  const onLongPressItem = useCallback(
+    (item: VaultItem) => toggleSelect(item.id),
+    [toggleSelect],
   );
 
   const handleImport = useCallback(async () => {
@@ -64,16 +102,89 @@ export function HomeScreen() {
     }
   }, [t, reload]);
 
+  const selectedItems = useCallback(
+    () => items.filter((it) => selectedIds.has(it.id)),
+    [items, selectedIds],
+  );
+
+  const handleBulkShare = useCallback(async () => {
+    const picked = selectedItems();
+    if (picked.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await shareMany(picked);
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedItems, busy]);
+
+  const handleBulkSave = useCallback(async () => {
+    const picked = selectedItems();
+    if (picked.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      const ok = await saveManyToDevice(picked);
+      Alert.alert(
+        ok ? t.home.savedTitle : t.home.savePermissionTitle,
+        ok ? undefined : t.home.savePermissionMessage,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedItems, busy, t]);
+
+  const handleBulkFavorite = useCallback(async () => {
+    const picked = selectedItems();
+    if (picked.length === 0 || busy) return;
+    // If every selected item is already a favorite, the action un-favorites
+    // them all; otherwise it favorites the whole selection.
+    const next = !picked.every((it) => it.isFavorite);
+    setBusy(true);
+    try {
+      await setFavoriteMany(
+        picked.map((it) => it.id),
+        next,
+      );
+      clearSelection();
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedItems, busy, clearSelection, reload]);
+
+  const handleBulkDelete = useCallback(() => {
+    const picked = selectedItems();
+    if (picked.length === 0 || busy) return;
+    Alert.alert(t.home.deleteTitle, t.home.deleteMessage, [
+      { text: t.home.cancel, style: "cancel" },
+      {
+        text: t.home.deleteConfirm,
+        style: "destructive",
+        onPress: async () => {
+          setBusy(true);
+          try {
+            await removeMany(picked);
+            clearSelection();
+            await reload();
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+  }, [selectedItems, busy, t, clearSelection, reload]);
+
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<VaultItem>) => (
       <ThumbCell
         item={item}
         size={cellSize}
-        onPress={openItem}
-        onLongPress={openItem}
+        selected={selectedIds.has(item.id)}
+        onPress={onPressItem}
+        onLongPress={onLongPressItem}
       />
     ),
-    [cellSize, openItem],
+    [cellSize, selectedIds, onPressItem, onLongPressItem],
   );
 
   return (
@@ -85,49 +196,98 @@ export function HomeScreen() {
             { borderBottomColor: theme.backgroundElement },
           ]}
         >
-          <Image source={LOGO} style={styles.logo} contentFit="contain" />
-          <View style={styles.actions}>
-            <Pressable
-              onPress={() => router.push("/settings")}
-              style={({ pressed }) => [
-                styles.iconButton,
-                { borderColor: theme.backgroundSelected },
-                pressed && styles.pressed,
-              ]}
-            >
-              <SymbolView
-                name={{
-                  ios: "gearshape",
-                  android: "settings",
-                  web: "settings",
-                }}
-                size={18}
-                tintColor={theme.text}
-              />
-            </Pressable>
-            <Pressable
-              onPress={handleImport}
-              disabled={importing}
-              style={({ pressed }) => [
-                styles.iconButton,
-                {
-                  borderColor: theme.textSecondary,
-                  backgroundColor: theme.primary,
-                },
-                pressed && styles.pressed,
-              ]}
-            >
-              {importing ? (
-                <ActivityIndicator size="small" color={theme.text} />
-              ) : (
+          {selectionMode ? (
+            <>
+              <Pressable
+                onPress={clearSelection}
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  { borderColor: theme.backgroundSelected },
+                  pressed && styles.pressed,
+                ]}
+              >
                 <SymbolView
-                  name={{ ios: "plus", android: "add", web: "add" }}
+                  name={{ ios: "xmark", android: "close", web: "close" }}
                   size={18}
                   tintColor={theme.text}
                 />
-              )}
-            </Pressable>
-          </View>
+              </Pressable>
+              <ThemedText type="smallBold">
+                {selectedIds.size} {t.home.selected}
+              </ThemedText>
+              <View style={styles.headerSpacer} />
+            </>
+          ) : (
+            <>
+              <ThemedText type="smallBold" style={{ fontSize: 18 }}>
+                {favoritesOnly ? t.home.favorites : "Ваше сховище"}
+              </ThemedText>
+              <View style={styles.actions}>
+                <Pressable
+                  onPress={() => setFavoritesOnly((v) => !v)}
+                  style={({ pressed }) => [
+                    styles.iconButton,
+                    {
+                      borderColor: favoritesOnly
+                        ? "#ff3b30"
+                        : theme.backgroundSelected,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <SymbolView
+                    name={
+                      favoritesOnly
+                        ? { ios: "heart.fill", android: "favorite", web: "favorite" }
+                        : { ios: "heart", android: "favorite_border", web: "favorite_border" }
+                    }
+                    size={18}
+                    tintColor={favoritesOnly ? "#ff3b30" : theme.text}
+                  />
+                </Pressable>
+                <Pressable
+                  onPress={() => router.push("/settings")}
+                  style={({ pressed }) => [
+                    styles.iconButton,
+                    { borderColor: theme.backgroundSelected },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <SymbolView
+                    name={{
+                      ios: "gearshape",
+                      android: "settings",
+                      web: "settings",
+                    }}
+                    size={18}
+                    tintColor={theme.text}
+                  />
+                </Pressable>
+                <Pressable
+                  onPress={handleImport}
+                  disabled={importing}
+                  style={({ pressed }) => [
+                    styles.iconButton,
+                    {
+                      borderColor: theme.textSecondary,
+                      backgroundColor: theme.primary,
+                    },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  {importing ? (
+                    <ActivityIndicator size="small" color={theme.text} />
+                  ) : (
+                    <SymbolView
+                      name={{ ios: "plus", android: "add", web: "add" }}
+                      size={18}
+                      tintColor={theme.text}
+                    />
+                  )}
+                </Pressable>
+              </View>
+            </>
+          )}
         </View>
 
         {progress && progress.total > 0 ? (
@@ -168,7 +328,7 @@ export function HomeScreen() {
           <View style={styles.center}>
             <ActivityIndicator color={theme.textSecondary} />
           </View>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <View style={styles.center}>
             <View
               style={[
@@ -177,43 +337,154 @@ export function HomeScreen() {
               ]}
             >
               <SymbolView
-                name={{
-                  ios: "photo.on.rectangle",
-                  android: "photo_library",
-                  web: "photo_library",
-                }}
+                name={
+                  favoritesOnly
+                    ? { ios: "heart", android: "favorite_border", web: "favorite_border" }
+                    : {
+                        ios: "photo.on.rectangle",
+                        android: "photo_library",
+                        web: "photo_library",
+                      }
+                }
                 size={32}
                 tintColor={theme.textSecondary}
               />
             </View>
             <ThemedText type="smallBold" style={styles.emptyTitle}>
-              {t.home.emptyTitle}
+              {favoritesOnly ? t.home.emptyFavoritesTitle : t.home.emptyTitle}
             </ThemedText>
             <ThemedText
               type="small"
               themeColor="textSecondary"
               style={styles.emptySubtitle}
             >
-              {t.home.emptySubtitle}
+              {favoritesOnly
+                ? t.home.emptyFavoritesSubtitle
+                : t.home.emptySubtitle}
             </ThemedText>
           </View>
         ) : (
           <FlashList
-            data={items}
+            data={visibleItems}
             keyExtractor={(item) => item.id}
             numColumns={COLUMNS}
             showsVerticalScrollIndicator={false}
+            extraData={selectedIds}
+            contentContainerStyle={
+              selectionMode ? styles.listPaddedForBar : undefined
+            }
             renderItem={renderItem}
           />
         )}
       </SafeAreaView>
+
+      {selectionMode ? (
+        <View
+          style={[
+            styles.actionBar,
+            {
+              backgroundColor: theme.background,
+              borderTopColor: theme.backgroundElement,
+            },
+          ]}
+        >
+          <SafeAreaView edges={["bottom", "left", "right"]}>
+            <View style={styles.actionRow}>
+              <BarAction
+                icon={{
+                  ios: "square.and.arrow.up",
+                  android: "share",
+                  web: "share",
+                }}
+                onPress={handleBulkShare}
+                disabled={busy}
+              />
+              <BarAction
+                icon={{
+                  ios: "square.and.arrow.down",
+                  android: "download",
+                  web: "download",
+                }}
+                onPress={handleBulkSave}
+                disabled={busy}
+              />
+              <BarAction
+                icon={
+                  selectedItems().every((it) => it.isFavorite)
+                    ? { ios: "heart.fill", android: "favorite", web: "favorite" }
+                    : { ios: "heart", android: "favorite_border", web: "favorite_border" }
+                }
+                onPress={handleBulkFavorite}
+                disabled={busy}
+                tint="#ff3b30"
+              />
+              <BarAction
+                icon={{ ios: "trash", android: "delete", web: "delete" }}
+                onPress={handleBulkDelete}
+                disabled={busy}
+                tint="#ff3b30"
+              />
+            </View>
+          </SafeAreaView>
+        </View>
+      ) : null}
     </ThemedView>
+  );
+}
+
+function BarAction({
+  icon,
+  onPress,
+  disabled,
+  tint,
+}: {
+  icon: SymbolViewProps["name"];
+  onPress: () => void;
+  disabled?: boolean;
+  tint?: string;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [
+        styles.barAction,
+        (pressed || disabled) && styles.pressed,
+      ]}
+    >
+      <SymbolView name={icon} size={24} tintColor={tint ?? theme.text} />
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   safeArea: { flex: 1 },
+  actionBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  actionRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.six,
+  },
+  barAction: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    minWidth: 64,
+  },
+  listPaddedForBar: {
+    paddingBottom: 88,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -235,6 +506,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   pressed: { opacity: 0.5 },
+  headerSpacer: { width: 38, height: 38 },
   progressBanner: {
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,

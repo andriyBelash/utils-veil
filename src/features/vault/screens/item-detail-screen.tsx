@@ -1,20 +1,22 @@
-import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useLocale } from '@/features/localization';
 
+import { ZoomableImage } from '../components/zoomable-image';
 import { getItem, setFavorite } from '../lib/db';
 import { getCachedThumb } from '../lib/media-cache';
 import {
   decryptFullToDataUri,
   decryptThumbToDataUri,
   removeItem,
+  saveToDevice,
   shareItem,
 } from '../lib/media-import';
 import type { VaultItem } from '../lib/types';
@@ -34,6 +36,7 @@ function formatStamp(ms: number, locale: string): { date: string; time: string }
 export function ItemDetailScreen() {
   const router = useRouter();
   const { t, locale } = useLocale();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const [item, setItem] = useState<VaultItem | null>(null);
@@ -42,6 +45,10 @@ export function ItemDetailScreen() {
   const [thumbUri, setThumbUri] = useState<string | null>(null);
   const [favorite, setFavoriteState] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // 0 → at rest, 1 → fully swiped away. Fades the chrome out as you drag.
+  const dragProgress = useSharedValue(0);
+  const chromeStyle = useAnimatedStyle(() => ({ opacity: 1 - dragProgress.value }));
 
   useEffect(() => {
     let active = true;
@@ -100,6 +107,23 @@ export function ItemDetailScreen() {
     }
   }
 
+  async function handleSave() {
+    if (!item || busy) return;
+    setBusy(true);
+    try {
+      const ok = await saveToDevice(item);
+      if (!ok) {
+        Alert.alert(t.home.savePermissionTitle, t.home.savePermissionMessage);
+      } else {
+        Alert.alert(t.home.savedTitle);
+      }
+    } catch {
+      // save failed (e.g. corrupt file) — fail silently
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function confirmDelete() {
     if (!item) return;
     Alert.alert(t.home.deleteTitle, t.home.deleteMessage, [
@@ -117,11 +141,37 @@ export function ItemDetailScreen() {
 
   return (
     <View style={styles.container}>
-      <SafeAreaView edges={['top', 'left', 'right', 'bottom']} style={styles.safeArea}>
+      {/* Full-screen photo: pinch-zoom, pan, swipe up/down to dismiss */}
+      {uri || thumbUri ? (
+        <ZoomableImage
+          uri={uri}
+          thumbUri={thumbUri}
+          onDismiss={goBack}
+          dragProgress={dragProgress}
+        />
+      ) : (
+        <View style={styles.center}>
+          <ActivityIndicator color="#ffffff" />
+        </View>
+      )}
+
+      {/* Chrome floats over the photo and fades out as you swipe to dismiss */}
+      <View
+        style={[
+          styles.overlay,
+          {
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+            paddingLeft: insets.left,
+            paddingRight: insets.right,
+          },
+        ]}
+        pointerEvents="box-none"
+      >
         {/* Top bar: back · date/time · spacer */}
-        <View style={styles.topBar}>
+        <Animated.View style={[styles.topBar, chromeStyle]} pointerEvents="box-none">
           <CircleButton icon={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} onPress={goBack} />
-          <View style={styles.stamp}>
+          <View style={styles.stamp} pointerEvents="none">
             {stamp ? (
               <>
                 <ThemedText style={styles.stampDate}>{stamp.date}</ThemedText>
@@ -130,30 +180,22 @@ export function ItemDetailScreen() {
             ) : null}
           </View>
           <View style={styles.circle} />
-        </View>
+        </Animated.View>
 
-        {/* Photo — blurred thumb shows instantly, full image cross-dissolves in */}
-        <View style={styles.imageWrap}>
-          {uri || thumbUri ? (
-            <Image
-              source={uri ? { uri } : null}
-              placeholder={thumbUri ? { uri: thumbUri } : null}
-              placeholderContentFit="contain"
-              transition={200}
-              style={styles.image}
-              contentFit="contain"
-              cachePolicy="memory"
-            />
-          ) : (
-            <ActivityIndicator color="#ffffff" />
-          )}
-        </View>
-
-        {/* Bottom toolbar: share · favorite · delete */}
-        <View style={styles.toolbar}>
+        {/* Bottom toolbar: share · save · favorite · delete */}
+        <Animated.View style={[styles.toolbar, chromeStyle]} pointerEvents="box-none">
           <CircleButton
             icon={{ ios: 'square.and.arrow.up', android: 'share', web: 'share' }}
             onPress={handleShare}
+            disabled={busy}
+          />
+          <CircleButton
+            icon={{
+              ios: 'square.and.arrow.down',
+              android: 'download',
+              web: 'download',
+            }}
+            onPress={handleSave}
             disabled={busy}
           />
           <CircleButton
@@ -170,8 +212,8 @@ export function ItemDetailScreen() {
             onPress={confirmDelete}
             tint="#ff3b30"
           />
-        </View>
-      </SafeAreaView>
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -204,7 +246,23 @@ const CIRCLE = 44;
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000000' },
-  safeArea: { flex: 1 },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'space-between',
+  },
+  center: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -233,15 +291,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   circlePressed: { opacity: 0.5 },
-  imageWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  image: {
-    width: '100%',
-    height: '100%',
-  },
   toolbar: {
     flexDirection: 'row',
     justifyContent: 'space-evenly',
