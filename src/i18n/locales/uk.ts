@@ -39,6 +39,7 @@ export const uk = {
     deleteMessage: 'Зашифрований файл буде остаточно стерто.',
     deleteConfirm: 'Видалити',
     cancel: 'Скасувати',
+    importing: 'Імпортування…',
   },
   privacyPolicy: {
     updated: 'Оновлено: 25 травня 2026 р.',

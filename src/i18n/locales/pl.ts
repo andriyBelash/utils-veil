@@ -39,6 +39,7 @@ export const pl = {
     deleteMessage: 'Zaszyfrowany plik zostanie trwale usunięty.',
     deleteConfirm: 'Usuń',
     cancel: 'Anuluj',
+    importing: 'Importowanie…',
   },
   privacyPolicy: {
     updated: 'Ostatnia aktualizacja: 25 maja 2026',

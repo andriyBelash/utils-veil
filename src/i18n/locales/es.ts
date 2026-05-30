@@ -39,6 +39,7 @@ export const es = {
     deleteMessage: 'El archivo cifrado se borrará permanentemente.',
     deleteConfirm: 'Eliminar',
     cancel: 'Cancelar',
+    importing: 'Importando…',
   },
   privacyPolicy: {
     updated: 'Última actualización: 25 de mayo de 2026',

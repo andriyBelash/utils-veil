@@ -12,13 +12,16 @@ type State = {
 export function useVaultItems(albumId?: string) {
   const [state, setState] = useState<State>({ items: [], loading: true });
 
+  // Note: we don't flip `loading` back to true on refetch. The hook reloads on
+  // every screen focus; showing the spinner each time would tear down the grid
+  // and flash on every back-navigation. Initial `loading: true` covers the
+  // first paint; later refetches swap items in place.
   const load = useCallback(async () => {
-    setState((s) => ({ ...s, loading: true }));
     try {
       const items = await getAllItems(albumId);
       setState({ items, loading: false });
     } catch {
-      setState({ items: [], loading: false });
+      setState((s) => ({ ...s, loading: false }));
     }
   }, [albumId]);
 

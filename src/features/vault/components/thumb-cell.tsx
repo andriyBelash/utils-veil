@@ -1,11 +1,12 @@
 import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { useTheme } from '@/hooks/use-theme';
 
-import { decryptThumbToDataUri } from '../lib/media-import';
+import { getCachedThumb } from '../lib/media-cache';
+import { loadThumb } from '../lib/media-import';
 import type { VaultItem } from '../lib/types';
 
 type Props = {
@@ -16,21 +17,35 @@ type Props = {
   onLongPress: (item: VaultItem) => void;
 };
 
-export function ThumbCell({ item, size, selected, onPress, onLongPress }: Props) {
+function ThumbCellBase({ item, size, selected, onPress, onLongPress }: Props) {
   const theme = useTheme();
-  const [uri, setUri] = useState<string | null>(null);
+  // Synchronous cache hit → instant first paint, no decrypt flash on scroll.
+  const [uri, setUri] = useState<string | null>(() => getCachedThumb(item.id) ?? null);
+
+  // FlashList recycles cell instances instead of remounting them: the same
+  // component receives a new `item` without the useState initializer re-running.
+  // Reset `uri` synchronously when the id changes so a recycled cell never shows
+  // the previous photo (tapping would otherwise open something other than what's
+  // on screen). Cache hit paints instantly; a miss falls through to the effect.
+  const [renderedId, setRenderedId] = useState(item.id);
+  if (renderedId !== item.id) {
+    setRenderedId(item.id);
+    setUri(getCachedThumb(item.id) ?? null);
+  }
 
   useEffect(() => {
-    let active = true;
-    decryptThumbToDataUri(item)
+    // Cache hit was already applied by the useState initializer.
+    if (getCachedThumb(item.id)) return;
+    let cancelled = false;
+    loadThumb(item, () => cancelled)
       .then((u) => {
-        if (active) setUri(u);
+        if (!cancelled && u) setUri(u);
       })
       .catch(() => {});
     return () => {
-      active = false;
+      cancelled = true;
     };
-  }, [item]);
+  }, [item.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Pressable
@@ -65,6 +80,17 @@ export function ThumbCell({ item, size, selected, onPress, onLongPress }: Props)
     </Pressable>
   );
 }
+
+export const ThumbCell = memo(
+  ThumbCellBase,
+  (a, b) =>
+    a.item.id === b.item.id &&
+    a.item.isFavorite === b.item.isFavorite &&
+    a.size === b.size &&
+    a.selected === b.selected &&
+    a.onPress === b.onPress &&
+    a.onLongPress === b.onLongPress,
+);
 
 const styles = StyleSheet.create({
   cell: {

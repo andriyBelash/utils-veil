@@ -39,6 +39,7 @@ export const fr = {
     deleteMessage: 'Le fichier chiffré sera définitivement effacé.',
     deleteConfirm: 'Supprimer',
     cancel: 'Annuler',
+    importing: 'Importation…',
   },
   privacyPolicy: {
     updated: 'Dernière mise à jour : 25 mai 2026',

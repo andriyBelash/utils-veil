@@ -39,6 +39,7 @@ export const en = {
     deleteMessage: 'The encrypted file will be permanently erased.',
     deleteConfirm: 'Delete',
     cancel: 'Cancel',
+    importing: 'Importing…',
   },
   privacyPolicy: {
     updated: 'Last updated: May 25, 2026',

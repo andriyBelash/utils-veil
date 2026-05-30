@@ -4,11 +4,11 @@
     "slug": "veil",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/adaptive-icon.png",
     "scheme": "veil",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/adaptive-icon.png",
       "bundleIdentifier": "com.belash.veil"
     },
     "android": {

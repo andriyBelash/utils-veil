@@ -29,6 +29,7 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_album ON vault_items(album_id);
   CREATE INDEX IF NOT EXISTS idx_favorite ON vault_items(is_favorite);
+  CREATE INDEX IF NOT EXISTS idx_created ON vault_items(created_at);
 `;
 
 /**

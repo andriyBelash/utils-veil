@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { readAutoLockTimeout } from '@/features/settings/lib/auto-lock-storage';
+import { clearMediaCaches } from '@/features/vault/lib/media-cache';
 
 export function useAutoLock(lock: () => void) {
   const backgroundAt = useRef<number | null>(null);
@@ -12,6 +13,9 @@ export function useAutoLock(lock: () => void) {
     const handleChange = async (nextState: AppStateStatus) => {
       if (nextState === 'background') {
         backgroundAt.current = Date.now();
+        // Wipe in-memory plaintext image caches immediately, independent of the
+        // auto-lock timeout — nothing decrypted should survive backgrounding.
+        clearMediaCaches();
       } else if (nextState === 'active') {
         if (backgroundAt.current === null) return;
         const elapsed = Date.now() - backgroundAt.current;

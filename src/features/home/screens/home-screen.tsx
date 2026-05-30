@@ -1,13 +1,14 @@
+import { FlashList, type ListRenderItemInfo } from "@shopify/flash-list";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
-  FlatList,
   Pressable,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -27,41 +28,64 @@ import { useTheme } from "@/hooks/use-theme";
 
 const COLUMNS = 3;
 
+const LOGO = require("@/assets/images/adaptive-icon.png");
+
 export function HomeScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { t } = useLocale();
   const { items, loading, reload } = useVaultItems();
   const [importing, setImporting] = useState(false);
+  const [progress, setProgress] =
+    useState<{ done: number; total: number } | null>(null);
 
-  const cellSize = Dimensions.get("window").width / COLUMNS;
+  const { width } = useWindowDimensions();
+  const cellSize = width / COLUMNS;
 
-  async function handleImport() {
+  const openItem = useCallback(
+    (item: VaultItem) => router.push(`/item/${item.id}`),
+    [router],
+  );
+
+  const handleImport = useCallback(async () => {
     const granted = await requestLibraryPermission();
     if (!granted) {
       Alert.alert(t.home.permissionTitle, t.home.permissionMessage);
       return;
     }
     setImporting(true);
+    setProgress(null);
     try {
-      await pickAndImport();
+      await pickAndImport((done, total) => setProgress({ done, total }));
       await reload();
     } finally {
       setImporting(false);
+      setProgress(null);
     }
-  }
+  }, [t, reload]);
 
-  function openItem(item: VaultItem) {
-    router.push(`/item/${item.id}`);
-  }
+  const renderItem = useCallback(
+    ({ item }: ListRenderItemInfo<VaultItem>) => (
+      <ThumbCell
+        item={item}
+        size={cellSize}
+        onPress={openItem}
+        onLongPress={openItem}
+      />
+    ),
+    [cellSize, openItem],
+  );
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView edges={["top", "left", "right"]} style={styles.safeArea}>
         <View
-          style={[styles.header, { borderBottomColor: theme.backgroundElement }]}
+          style={[
+            styles.header,
+            { borderBottomColor: theme.backgroundElement },
+          ]}
         >
-          <ThemedText type="smallBold">Veil</ThemedText>
+          <Image source={LOGO} style={styles.logo} contentFit="contain" />
           <View style={styles.actions}>
             <Pressable
               onPress={() => router.push("/settings")}
@@ -72,7 +96,11 @@ export function HomeScreen() {
               ]}
             >
               <SymbolView
-                name={{ ios: "gearshape", android: "settings", web: "settings" }}
+                name={{
+                  ios: "gearshape",
+                  android: "settings",
+                  web: "settings",
+                }}
                 size={18}
                 tintColor={theme.text}
               />
@@ -82,22 +110,59 @@ export function HomeScreen() {
               disabled={importing}
               style={({ pressed }) => [
                 styles.iconButton,
-                { borderColor: theme.backgroundElement, backgroundColor: theme.text },
+                {
+                  borderColor: theme.textSecondary,
+                  backgroundColor: theme.primary,
+                },
                 pressed && styles.pressed,
               ]}
             >
               {importing ? (
-                <ActivityIndicator size="small" color={theme.background} />
+                <ActivityIndicator size="small" color={theme.text} />
               ) : (
                 <SymbolView
                   name={{ ios: "plus", android: "add", web: "add" }}
                   size={18}
-                  tintColor={theme.background}
+                  tintColor={theme.text}
                 />
               )}
             </Pressable>
           </View>
         </View>
+
+        {progress && progress.total > 0 ? (
+          <View
+            style={[
+              styles.progressBanner,
+              { borderBottomColor: theme.backgroundElement },
+            ]}
+          >
+            <View style={styles.progressHeader}>
+              <ThemedText type="small" themeColor="textSecondary">
+                {t.home.importing}
+              </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {progress.done}/{progress.total}
+              </ThemedText>
+            </View>
+            <View
+              style={[
+                styles.progressTrack,
+                { backgroundColor: theme.backgroundElement },
+              ]}
+            >
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    backgroundColor: theme.text,
+                    width: `${(progress.done / progress.total) * 100}%`,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        ) : null}
 
         {loading ? (
           <View style={styles.center}>
@@ -106,7 +171,10 @@ export function HomeScreen() {
         ) : items.length === 0 ? (
           <View style={styles.center}>
             <View
-              style={[styles.emptyIcon, { backgroundColor: theme.backgroundElement }]}
+              style={[
+                styles.emptyIcon,
+                { backgroundColor: theme.backgroundElement },
+              ]}
             >
               <SymbolView
                 name={{
@@ -130,19 +198,12 @@ export function HomeScreen() {
             </ThemedText>
           </View>
         ) : (
-          <FlatList
+          <FlashList
             data={items}
             keyExtractor={(item) => item.id}
             numColumns={COLUMNS}
             showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <ThumbCell
-                item={item}
-                size={cellSize}
-                onPress={openItem}
-                onLongPress={openItem}
-              />
-            )}
+            renderItem={renderItem}
           />
         )}
       </SafeAreaView>
@@ -174,6 +235,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   pressed: { opacity: 0.5 },
+  progressBanner: {
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+    gap: Spacing.two,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  progressHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 2,
+  },
   center: {
     flex: 1,
     alignItems: "center",
@@ -194,5 +274,9 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 13,
     lineHeight: 18,
+  },
+  logo: {
+    width: 40,
+    height: 40,
   },
 });

@@ -7,6 +7,7 @@ import * as Sharing from 'expo-sharing';
 import { bytesToBase64, bytesToBase64Async } from './crypto-primitives';
 import { deleteItem, insertItem } from './db';
 import { decryptFileBytes, encryptFileBytes } from './file-crypto';
+import { dropCachedThumb, getCachedThumb, setCachedThumb } from './media-cache';
 import type { VaultItem } from './types';
 
 const VAULT_DIR = '.vault';
@@ -32,7 +33,10 @@ export async function requestLibraryPermission(): Promise<boolean> {
 }
 
 /** Opens the multi-select picker and imports each chosen photo. Returns count. */
-export async function pickAndImport(): Promise<number> {
+/** Reports import progress: `done` assets processed out of `total` selected. */
+export type ImportProgress = (done: number, total: number) => void;
+
+export async function pickAndImport(onProgress?: ImportProgress): Promise<number> {
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ['images'],
     allowsMultipleSelection: true,
@@ -40,6 +44,10 @@ export async function pickAndImport(): Promise<number> {
   });
   if (result.canceled) return 0;
 
+  const total = result.assets.length;
+  onProgress?.(0, total);
+
+  let processed = 0;
   let imported = 0;
   for (const asset of result.assets) {
     try {
@@ -49,6 +57,8 @@ export async function pickAndImport(): Promise<number> {
       // Skip a single bad asset rather than aborting the whole batch.
       console.warn('[veil] import failed', e);
     }
+    processed += 1;
+    onProgress?.(processed, total);
   }
   return imported;
 }
@@ -94,9 +104,54 @@ async function importAsset(asset: ImagePicker.ImagePickerAsset): Promise<void> {
 /** Decrypts a thumbnail to an in-memory data: URI (never touches disk). */
 export async function decryptThumbToDataUri(item: VaultItem): Promise<string | null> {
   if (!item.thumbPath) return null;
+  const cached = getCachedThumb(item.id);
+  if (cached) return cached;
   const blob = new File(item.thumbPath).bytesSync();
   const plain = await decryptFileBytes(`${item.id}.thumb`, blob);
-  return `data:image/jpeg;base64,${bytesToBase64(plain)}`;
+  const uri = `data:image/jpeg;base64,${bytesToBase64(plain)}`;
+  setCachedThumb(item.id, uri);
+  return uri;
+}
+
+// Concurrency gate for thumbnail decryption. Fast scrolling mounts many cells at
+// once; without this each fires an AES-GCM decrypt in parallel, flooding the
+// native bridge and wasting work on cells that already scrolled off-screen.
+const MAX_CONCURRENT_THUMBS = 4;
+let activeThumbs = 0;
+const thumbWaiters: Array<() => void> = [];
+
+function acquireThumbSlot(): Promise<void> {
+  if (activeThumbs < MAX_CONCURRENT_THUMBS) {
+    activeThumbs += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => thumbWaiters.push(resolve));
+}
+
+function releaseThumbSlot(): void {
+  const next = thumbWaiters.shift();
+  if (next) next(); // hand the slot to the next waiter, activeThumbs unchanged
+  else activeThumbs -= 1;
+}
+
+/**
+ * Cache-first, concurrency-limited thumbnail loader for grid cells.
+ * `isCancelled` lets a cell that scrolled away while queued skip the (costly)
+ * decrypt entirely instead of just discarding the result.
+ */
+export async function loadThumb(
+  item: VaultItem,
+  isCancelled: () => boolean,
+): Promise<string | null> {
+  const cached = getCachedThumb(item.id);
+  if (cached) return cached;
+  await acquireThumbSlot();
+  try {
+    if (isCancelled()) return null;
+    return await decryptThumbToDataUri(item);
+  } finally {
+    releaseThumbSlot();
+  }
 }
 
 /** Decrypts the full-size image to an in-memory data: URI (detail view only). */
@@ -133,5 +188,6 @@ export async function shareItem(item: VaultItem): Promise<void> {
 export async function removeItem(item: VaultItem): Promise<void> {
   safeDelete(item.encryptedPath);
   if (item.thumbPath) safeDelete(item.thumbPath);
+  dropCachedThumb(item.id);
   await deleteItem(item.id);
 }

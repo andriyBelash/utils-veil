@@ -39,6 +39,7 @@ export const de = {
     deleteMessage: 'Die verschlüsselte Datei wird dauerhaft gelöscht.',
     deleteConfirm: 'Löschen',
     cancel: 'Abbrechen',
+    importing: 'Importieren…',
   },
   privacyPolicy: {
     updated: 'Zuletzt aktualisiert: 25. Mai 2026',

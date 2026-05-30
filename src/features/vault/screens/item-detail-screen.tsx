@@ -10,7 +10,13 @@ import { Spacing } from '@/constants/theme';
 import { useLocale } from '@/features/localization';
 
 import { getItem, setFavorite } from '../lib/db';
-import { decryptFullToDataUri, removeItem, shareItem } from '../lib/media-import';
+import { getCachedThumb } from '../lib/media-cache';
+import {
+  decryptFullToDataUri,
+  decryptThumbToDataUri,
+  removeItem,
+  shareItem,
+} from '../lib/media-import';
 import type { VaultItem } from '../lib/types';
 
 function formatStamp(ms: number, locale: string): { date: string; time: string } {
@@ -32,6 +38,8 @@ export function ItemDetailScreen() {
 
   const [item, setItem] = useState<VaultItem | null>(null);
   const [uri, setUri] = useState<string | null>(null);
+  // Low-res preview shown instantly while the full image decrypts (blur-up).
+  const [thumbUri, setThumbUri] = useState<string | null>(null);
   const [favorite, setFavoriteState] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -42,11 +50,23 @@ export function ItemDetailScreen() {
       if (!active || !loaded) return;
       setItem(loaded);
       setFavoriteState(loaded.isFavorite);
+      // Instant placeholder: the thumb is usually already in memory from the
+      // grid tap; if not (deep link), decrypt it — it's tiny and fast.
+      const cachedThumb = getCachedThumb(loaded.id);
+      if (cachedThumb) {
+        setThumbUri(cachedThumb);
+      } else {
+        decryptThumbToDataUri(loaded)
+          .then((u) => {
+            if (active && u) setThumbUri(u);
+          })
+          .catch(() => {});
+      }
       try {
         const dataUri = await decryptFullToDataUri(loaded);
         if (active) setUri(dataUri);
       } catch {
-        // corrupt/undecryptable — leave spinner; user can still delete
+        // corrupt/undecryptable — placeholder stays; user can still delete
       }
     })();
     return () => {
@@ -112,10 +132,18 @@ export function ItemDetailScreen() {
           <View style={styles.circle} />
         </View>
 
-        {/* Photo */}
+        {/* Photo — blurred thumb shows instantly, full image cross-dissolves in */}
         <View style={styles.imageWrap}>
-          {uri ? (
-            <Image source={{ uri }} style={styles.image} contentFit="contain" cachePolicy="memory" />
+          {uri || thumbUri ? (
+            <Image
+              source={uri ? { uri } : null}
+              placeholder={thumbUri ? { uri: thumbUri } : null}
+              placeholderContentFit="contain"
+              transition={200}
+              style={styles.image}
+              contentFit="contain"
+              cachePolicy="memory"
+            />
           ) : (
             <ActivityIndicator color="#ffffff" />
           )}

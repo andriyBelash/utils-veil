@@ -10,6 +10,7 @@ import argon2 from 'react-native-argon2';
 
 import { bytesToHex, hexToBytes, zeroize } from './crypto-primitives';
 import { closeVaultDb, openVaultDb } from './db';
+import { clearMediaCaches } from './media-cache';
 
 // ===== Key model =====
 //
@@ -187,6 +188,7 @@ export async function changePin(currentPin: string, newPin: string): Promise<boo
 }
 
 export function lockVault(): void {
+  clearMediaCaches();
   closeVaultDb();
   if (cachedDek) {
     zeroize(cachedDek);
